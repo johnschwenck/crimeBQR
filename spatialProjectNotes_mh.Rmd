@@ -1,0 +1,36 @@
+---
+title: "Spatial Project Notes"
+author: "Marshall Honaker"
+date: "14 November 2020"
+output: pdf_document
+urlcolor: blue
+---
+For this project, we would like to construct a Bayesian spatial quantile regression model to analyze crime data from New York's Open Data. To do so, we will adapt the liklelihood based approach taken by [Wu & Narisetty (2020)](https://projecteuclid.org/download/pdfview_1/euclid.ba/1596160823) in a spatial context. 
+
+There have been a few papers that have implemented such models, most notably [Reich et al. (2011)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3583387/) but also [Ramsey (2019)](https://onlinelibrary-wiley-com.srv-proxy1.library.tamu.edu/doi/abs/10.1093/ajae/aaz029)^[Available via TAMU Libraries] and [King & Song (2016)](https://www.tandfonline.com/doi/abs/10.1080/02664763.2018.1508557?journalCode=cjas20)^[Available via TAMU Libraries]. The code used for the Bayesian spatial quantile regression model implemented by Reich et al. is available on the author's website (Reich was kind enough to post [code for the MCMC](https://www4.stat.ncsu.edu/~bjreich/code/SpaceQRapprox.R) and [code for an example](https://www4.stat.ncsu.edu/~bjreich/code/exampleSQR.R)). 
+
+Here are a few videos, lecture decks, etc. for my own edification more that anything:
+
+Resource | Link
+--------- | -----
+Quantile Regression Video (Univ. of Copenhagen) | https://www.youtube.com/watch?v=pAKwoz05lK4
+Quantile Regression Video (Ohio State) | https://www.youtube.com/watch?v=P9lMmEkXuBw
+Quantile Regression Slides | https://fmwww.bc.edu/EC-C/S2013/823/EC823.S2013.nn04.slides.pdf
+Importance Sampling Review Paper | http://www2.stat.duke.edu/~st118/Publication/impsamp.pdf
+Importance Sampling Slides | https://astrostatistics.psu.edu/su14/lectures/cisewski_is.pdf
+Importance Sampling Video | https://www.youtube.com/watch?v=S3LAOZxGcnk
+
+The quantile regression optimization problem is going to look something:
+$$\hat{\beta} = \arg \min_\beta \sum_{i = 1}^n \rho_\tau (Y_i - X_i^T \beta)$$
+
+Now, as mentioned previously, our ultimate goal is adapt/implement the likelihood based approach to Bayesian multiple quantile regression as proposed by Wu & Narisetty (2020) in a spatial setting. The authors of that paper propose the following working likelihood:
+$$L(Y | X, \beta) = C \exp\left( -\frac{1}{2n} s_\tau(\beta)^T W s_\tau(\beta) \right)$$
+Where $W = \frac{n}{\tau(1 - \tau)} \left( \sum_{i = 1}^n x_i x_i^T \right)^{-1}$ is a weight matrix (the authors show later in the paper that this particular choice of the weight matrix: "...will lead to valid inference based on the posterior."), $s_\tau (\beta) = \sum_{i = 1}^n x_i \psi_\tau (y_i - x_i^T \beta)$ is the: "score function given for the quantile regression objective function [$\hat{\beta}(\tau) = argmin_\beta \sum_{i = 1}^n \rho_\tau (y_i - x_i^T \beta)$]", and $\tau$ is the desired quantile level. *I've actually got a question about this. If the score is the gradient of the log-likelihood and it appears in the definition of the likelihood function itself, are we going to have to treat it as a differential equation of some sort? Read more in the paper about this.*
+
+The authors also present two choices of priors on $\beta$. The first is simply a Uniform prior $\beta \sim Unif.(-n, n)$.^[pg. 7 of Wu & Narisetty. Double check to make sure you're reading this right] However, if the quantiles are expected to vary smoothly as a function of the quantile level $\tau$, then we can represent this phenomena in our prior by using a multivariate normal prior distribution with high correlations between the parameters. 
+
+The next question for us is going to be how this can be adapted into a spatial setting. My first instinct is to try to adapt the weight matrix $W$ used in the likelihood.^[See pg. 5 of Wu & Narisetty] If we were to replace the weight matrix $W$ with the corresponding spatial covariance matrix $\Sigma$, might be able incorporate the spatial dependence of the variables into our model. There are a few different covariance functions we could use, but Matérn seems like it might work well. (According to Dr. Sang, Matérn is a popular choice and can be very flexible. However, if there isn't a predefined Matérn covariance method in R, we we can use a simpler, more easily implemented one until we can write the necessary code.)
+
+However, if we start changing the weight matrix, we will need to be careful. This is part of what ensures the validity of inference procedures based on the posterior. At first glance, though, I think this should work out nicely, since (as far as I can tell) the only really requirement placed on $W$ is that it is positive definite (which all covariance matrices must be).^[Make sure that this is in fact the only requirement and that substituting a covariance matrix will still lead to valid inference procedures based on the posterior]
+
+
