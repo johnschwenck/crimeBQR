@@ -7,7 +7,7 @@ from sodapy import Socrata
 os.chdir('c:\\Users\\John\\Documents\\GitHub')
 import keyring_login
 
-os.chdir('c:\\Users\\John\\Documents\\GitHub\\NYC_crime')
+os.chdir('c:\\Users\\John\\Documents\\GitHub\\crimeBQR')
 
 data_dict = {
     'arrests_hist': [0, '8h9b-rp9u'],
