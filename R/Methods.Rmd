@@ -15,6 +15,7 @@ Wu and Narisetty (2020) outline a score based likelihood approach to Bayesian mu
 
 To begin, we will define so of the more basic, necessary functions. First, we will define the score function. 
 
+# Basic Functions & Methods
 In the aforementioned paper, the score function is given by: $s_\tau (\beta) = \sum_{i = 1}^nx_i \psi_\tau (y_i - x_i^T \beta)$, where $\psi_\tau(u) = \tau - I_{\{ u < 0 \}}(u)$. Note that in this case, $\psi_\tau(.)$ is essentially the check-loss function mentioned earlier in the paper applied top the residuals. 
 ```{r}
 get_score <- function(y, X, tau, beta){
@@ -32,7 +33,7 @@ get_spatial_covar_mat <- function(locs){
 }
 ```
 
-Next, we will write a method to obtain a spatially adapted rendition of the proposed working likelihood function. The working likelihood function proposed in the paper is given by $L(Y | X, \beta) = C \exp\left( -\frac{1}{2n} s_\tau(\beta)^T W s_\tau(\beta) \right)$ where $W$ is a p x p weight matrix. Now, to account for the spatial variability/dependence within the data, we will instead use the sample Mahalanobis distance given by $(X - \hat{\mu})^T \Sigma^{-1} (X - \hat{\mu})$ where $\Sigma$ is the spatial covariance matrix. *Note that the paper requires $W$ to be positive definite, the sample Mahalanobis matrix is only positive semi-definite. We will need to address this later. We will need to find a way to make sure that this this change will still lead to valid inference based on the posterior.*
+Next, we will write a method to obtain a spatially adapted rendition of the proposed working likelihood function. The working likelihood function proposed in the paper is given by $L(Y | X, \beta) = C \exp\left( -\frac{1}{2n} s_\tau(\beta)^T W s_\tau(\beta) \right)$ where $W$ is a p x p weight matrix. Now, to account for the spatial variability/dependence within the data, we will instead use the sample Mahalanobis distance given by $(X - \hat{\mu})^T \Sigma^{-1} (X - \hat{\mu})$ where $\Sigma$ is the spatial covariance matrix. *Note that while the paper requires $W$ to be positive definite, the sample Mahalanobis matrix is only positive semi-definite. We will need to find a way to make sure that this this change will still lead to valid inference based on the posterior later on.*
 ```{r}
 get_likelihood <- function(y, X, tau, beta, locs, C){
   score <- get_score(y, X, tau, beta)
@@ -43,6 +44,7 @@ get_likelihood <- function(y, X, tau, beta, locs, C){
 }
 ```
 
+## Testing basic methods
 Now that we have defined the basic functions, let's test them to make sure they work.
 ```{r}
 n <- 100
@@ -51,9 +53,9 @@ m1 <- RMexp(var = 2, scale = 1.5) +
   RMnugget(var = .1) + 
   RMtrend(mean = 1)
 sim_vals <- RFsimulate(m1, x = locs[,1], y = locs[,2])
-test_X <- cbind(rnorm(n), rnorm(n))
-test_beta <- c(1, 3)
-test_y <- test_beta[1]*locs[,1] + test_beta[2]*locs[,2] + sim_vals$variable1
+test_X <- cbind(rnorm(n), rnorm(n), rnorm(n), rnorm(n))
+test_beta <- c(1, 2, 3, 4)
+test_y <- test_beta[2]*locs[,1] + test_beta[3]*locs[,2] + sim_vals$variable1
 test_tau <- .5
 
 get_score(test_y, test_X, test_tau, test_beta)
@@ -62,9 +64,10 @@ get_likelihood(test_y, test_X, test_tau, test_beta, locs, 1)
 
 So it seems like everything is working alright. Now let's move on to the importance sampling. 
 
-Wu & Narisetty describe an Importance Sampling (IS) procedure on pgs. 13-14. I've done my best to code it here, but there are still some issues. Most notably, the IS sampling stops working once you try to run more than 5 iterations. This will require some more testing though, I've only tried each iteration with 500 draws from the proposal. (We might be able to run more iterations/perform more updates if we use a smaller number of draws in each iteration.) Furthermore, the expression they give for the posterior covariance from the IS algorithm does not seem to produce positive definite covariance matrices. I was able to generate valid posterior covariance matrices using the simulated values from the IS algorithm, but **they do not take into account the importance weights.** As mentioned previously, we will still need to ensure that inference procedures based on the resulting posterior will be valid.
+# Ada Importance Sampling for a Single Quantile Level
+Wu & Narisetty describe an Importance Sampling (IS) procedure on pgs. 13-14. I've done my best to code it here, but there are still some issues. I will discuss these issues later. 
 
-A quick overview of these methods: the `get_updated_params(.)` function simply returns a list whose elements are the parameter values for a particular set of simulated observations. This just makes the `adaIS_singleQuantile(.)` function a little more readable when we have to update the parameter values in each iteration.
+The `get_updated_params()` function simply returns a list whose elements are the parameter values (the mean vector and the covariance matrix) for a given set of simulated observations. This makes the `adaIS_singleQuantile()` function a little more readable when we have to update the parameter values in each iteration.
 ```{r}
 get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){
   n <- length(y)
@@ -105,17 +108,28 @@ adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){
 
 Now, to test our IS method.
 ```{r}
-m <- 10
+m <- 10000
 S_0 <- cov(test_X)
 initial_draw <- rmvnorm(m, test_beta, S_0)
 
 get_updated_params(test_y, test_X, test_tau, test_beta, cov(test_X), locs, initial_draw)
 
-posterior_parameters <- adaIS_singleQuantile(test_y, test_X, test_tau, 1, locs, m, 5)
+adaIS_singleQuantile(test_y, test_X, test_tau, 1, locs, m, 10)
 ```
 
-So everything seems to be working, thought it does need a little tuning/refinement. According to the above example, the mean of the posterior distribution of $\vec{\beta}$ will have mean `r posterior_parameters$mu` and covariance matrix `r posterior_parameters$S`.
+So everything seems to be working, thought it does need a little tuning/refinement. 
 
+# Issues so Far
+
+So it seems like the issue with the `adaIS_singleQuantile()` method is with the number of iterations of the IS, not the number of draws on each iteration. I was able to run the IS with 1000000 draws per iteration for 10 iterations and it ran just fine. (Generally, we seem to be able to make the number of draws as large as we want as long as the number of iterations is relatively low.) However, when we increase the number of iterations anywhere above ~13, we get the following error:
+
+`Error in eigen(sigma, symmetric = TRUE) : infinite or missing values in 'x'`
+
+I'm not entirely sure what is causing this, but I have two theories: 
+
+One, it could have something to do with the calculations for the posterior covariance matrix. I mentioned earlier, when we swap the weight matrix $W$ for the sample spatial Mahalanobis distance in the working likelihood, the formula for the posterior covariance given in the paper no longer yields a positive definite covariance matrix. I found a work around to get the IS to work in the short term, but it doesn't take into account the importance weights. 
+
+Two, this could actually be because we swapped the weight matrix for the sample spatial Mahalanobis distance. The paper specifies that $W$ must be positive definite, but the sample Mahalanobis distance is only positive *semi*-definite. That may explain why it doesn't work for larger iterations (eventually, the IS just randomly encounters the "semi-definite" case in which one of the Eigenvalues is effectively zero and it can't perform the necessary computations).
 
 
 
