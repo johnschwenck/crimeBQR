@@ -39,7 +39,7 @@ get_likelihood <- function(y, X, tau, beta, locs, C){
   score <- get_score(y, X, tau, beta)
   X_centered <- X - colMeans(X)
   coef <- -1/(2*length(y))
-  kernel <- exp(coef*t(score)%*%t(X_centered)%*%get_spatial_covar_mat(locs)%*%X_centered%*%score)
+  kernel <- exp(coef*t(score)%*%t(X_centered)%*%solve(get_spatial_covar_mat(locs))%*%X_centered%*%score)
   return(C*kernel[1,1])
 }
 ```
@@ -80,7 +80,7 @@ get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){
   S <- matrix(nrow = p, ncol = p)
   for(i in 1:p){
     for(j in 1:p){
-      S[i,j] <- mean((draw[,i] - mu_hat[i])*(draw[,j] - mu_hat[j]))
+      S[i,j] <- sum(w*(draw[,i] - mu_hat[i])*(draw[,j] - mu_hat[j]))/(sum(w)*(n - 1))
     }
   }
   temp <- list(mu_hat, S)
@@ -131,6 +131,6 @@ One, it could have something to do with the calculations for the posterior covar
 
 Two, this could actually be because we swapped the weight matrix for the sample spatial Mahalanobis distance. The paper specifies that $W$ must be positive definite, but the sample Mahalanobis distance is only positive *semi*-definite. That may explain why it doesn't work for larger iterations (eventually, the IS just randomly encounters the "semi-definite" case in which one of the Eigenvalues is effectively zero and it can't perform the necessary computations).
 
-
+Because the likelihood function $L(Y | X, \beta)$ is defined with respect to the score function $s_\tau(\beta)$ (that is, $L(Y | X, \beta) = C \exp\left( -\frac{1}{2n} s_\tau(\beta)^T (X - \hat{\mu})^T \Sigma^{-1} (X - \hat{\mu}) s_\tau(\beta) \right)$) and the score function is the gradient of the log-likelihood with respect to the parameters, we will need to solve a differential equation to get a functional form for the score function and likelihood.
 
 
