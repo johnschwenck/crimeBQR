@@ -2,6 +2,7 @@
 title: "Methods"
 author: "Marshall Honaker"
 output: pdf_document
+urlcolor: blue
 ---
 First, let's import the necessary packages:
 ```{r}
@@ -132,5 +133,8 @@ One, it could have something to do with the calculations for the posterior covar
 Two, this could actually be because we swapped the weight matrix for the sample spatial Mahalanobis distance. The paper specifies that $W$ must be positive definite, but the sample Mahalanobis distance is only positive *semi*-definite. That may explain why it doesn't work for larger iterations (eventually, the IS just randomly encounters the "semi-definite" case in which one of the Eigenvalues is effectively zero and it can't perform the necessary computations).
 
 Because the likelihood function $L(Y | X, \beta)$ is defined with respect to the score function $s_\tau(\beta)$ (that is, $L(Y | X, \beta) = C \exp\left( -\frac{1}{2n} s_\tau(\beta)^T (X - \hat{\mu})^T \Sigma^{-1} (X - \hat{\mu}) s_\tau(\beta) \right)$) and the score function is the gradient of the log-likelihood with respect to the parameters, we will need to solve a differential equation to get a functional form for the score function and likelihood.
+
+### UPDATE:
+I think the use of the term "score function" here may be a little misleading. Though I've never seen it defined in this way, I found [this slide deck](http://www.econ.uiuc.edu/~roger/NAKE/wk2.pdf) developed by Koenker himself which sheds a little light on the subject. After going through this (especially slide 15), I don't think $s_\tau(\beta)$ is the traditional "score" function (i.e; the gradient of the log-likelihood). It seems like when they said "score function" they meant "*rank*score function", which is another way of defining quantiles. It seems that the rankscore function actually comes from the quantile regression objective function $\hat{\beta}(\tau) = \arg \min_\beta \sum_{i = 1}^n \rho_\tau(y_i - x_i^T \beta)$  , there's no need to solve any sort of more complicated differential equation since the likelihood is no longer a function of its own derivative. 
 
 
