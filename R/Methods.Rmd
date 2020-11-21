@@ -17,9 +17,9 @@ Wu and Narisetty (2020) outline a score based likelihood approach to Bayesian mu
 To begin, we will define so of the more basic, necessary functions. First, we will define the score function. 
 
 # Basic Functions & Methods
-In the aforementioned paper, the score function is given by: $s_\tau (\beta) = \sum_{i = 1}^nx_i \psi_\tau (y_i - x_i^T \beta)$, where $\psi_\tau(u) = \tau - I_{\{ u < 0 \}}(u)$. Note that in this case, $\psi_\tau(.)$ is essentially the check-loss function mentioned earlier in the paper applied top the residuals. 
+In the aforementioned paper, the score function is given by: $s_\tau (\beta) = \sum_{i = 1}^n x_i \psi_\tau (y_i - x_i^T \beta)$, where $\psi_\tau(u) = \tau - I_{\{ u < 0 \}}(u)$. Note that in this case, $\psi_\tau(.)$ is essentially the check-loss function mentioned earlier in the paper applied top the residuals. 
 ```{r}
-get_score <- function(y, X, tau, beta){
+get_score <- function(y, X, tau, beta){  ## outputs px1 vector
   u <- y - X%*%beta
   psi <- ifelse(u < 0, tau - 1, tau)
   return(t(X)%*%psi)
@@ -28,7 +28,7 @@ get_score <- function(y, X, tau, beta){
 
 I'm also going to define a function to obtain the spatial covaraince matrix. I'm going to set it to use the Matérn covariance function with $\nu$ = 1.5 and $\phi$ = 1.5 but we can change this later or make it more adaptive as need be.
 ```{r}
-get_spatial_covar_mat <- function(locs){
+get_spatial_covar_mat <- function(locs){  ## outputs nxn spatial covariance matrix
   dist <- rdist(locs)
   return(Matern(dist, range = .2, nu = 1.5))
 }
@@ -36,7 +36,7 @@ get_spatial_covar_mat <- function(locs){
 
 Next, we will write a method to obtain a spatially adapted rendition of the proposed working likelihood function. The working likelihood function proposed in the paper is given by $L(Y | X, \beta) = C \exp\left( -\frac{1}{2n} s_\tau(\beta)^T W s_\tau(\beta) \right)$ where $W$ is a p x p weight matrix. Now, to account for the spatial variability/dependence within the data, we will instead use the sample Mahalanobis distance given by $(X - \hat{\mu})^T \Sigma^{-1} (X - \hat{\mu})$ where $\Sigma$ is the spatial covariance matrix. *Note that while the paper requires $W$ to be positive definite, the sample Mahalanobis matrix is only positive semi-definite. We will need to find a way to make sure that this this change will still lead to valid inference based on the posterior later on.*
 ```{r}
-get_likelihood <- function(y, X, tau, beta, locs, C){
+get_likelihood <- function(y, X, tau, beta, locs, C){  ## Outputs 1x1 scalar that is the likelihood
   score <- get_score(y, X, tau, beta)
   X_centered <- X - colMeans(X)
   coef <- -1/(2*length(y))
@@ -70,7 +70,7 @@ Wu & Narisetty describe an Importance Sampling (IS) procedure on pgs. 13-14. I'v
 
 The `get_updated_params()` function simply returns a list whose elements are the parameter values (the mean vector and the covariance matrix) for a given set of simulated observations. This makes the `adaIS_singleQuantile()` function a little more readable when we have to update the parameter values in each iteration.
 ```{r}
-get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){
+get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){  ## outputs list with mu (which is a p-length vector of estimated means) and S (which is the estimated pxp covariance matrix of the features) based on the given draw of values
   n <- length(y)
   p <- ncol(X)
   
@@ -89,7 +89,7 @@ get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){
   return(temp)
 }
 
-adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){
+adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){  ## ## outputs list with mu (which is a p-length vector of estimated means) and S (which is the estimated pxp covariance matrix of the features) for the posterior distribution of our betas based on the IS algorithm
   p <- ncol(X)
   n <- length(y)
   beta <- coef(lm(y ~ X))[-1]
@@ -115,7 +115,7 @@ initial_draw <- rmvnorm(m, test_beta, S_0)
 
 get_updated_params(test_y, test_X, test_tau, test_beta, cov(test_X), locs, initial_draw)
 
-adaIS_singleQuantile(test_y, test_X, test_tau, 1, locs, m, 10)
+adaIS_singleQuantile(test_y, test_X, test_tau, 1, locs, m, 22)
 ```
 
 So everything seems to be working, thought it does need a little tuning/refinement. 
