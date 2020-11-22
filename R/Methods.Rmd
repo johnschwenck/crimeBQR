@@ -1,7 +1,7 @@
 ---
 title: "Methods"
 author: "Marshall Honaker"
-output: html_document
+output: pdf_document
 urlcolor: blue
 ---
 First, let's import the necessary packages:
@@ -94,12 +94,12 @@ get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){
 
 adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){ 
   ## outputs list with $mu (a p-length vector of estimated means) and $S (the estimated pxp covariance matrix of the features) for the posterior distribution of our betas based on the IS algorithm. This method runs the entire adaIS algorithm for a single quantile outlined in the paper
-  p <- ncol(X) ## Step1: Initialize starting values for IS algorithm
-  n <- length(y) ## Step1: Initialize starting values for IS algorithm
-  beta <- coef(lm(y ~ X))[-1] ## Step1: Initialize starting values for IS algorithm
-  S <- cov(X) ## Step1: Initialize starting values for IS algorithm
+  p <- ncol(X) ## Step 1: Initialize starting values for IS algorithm
+  n <- length(y) ## Step 1: Initialize starting values for IS algorithm
+  beta <- coef(lm(y ~ X))[-1] ## Step 1: Initialize starting values for IS algorithm
+  S <- cov(X) ## Step 1: Initialize starting values for IS algorithm
   
-  params <- list(beta, S)  ## Put out initial parameters into a list called params so we can update it in the loop and use the same name convention
+  params <- list(beta, S)  ## Put our initial parameter estimates/starting values into a list called params so we can update it in the loop and use the same name convention
   names(params) <- c("mu", "S")
   
   for(i in 1:num_reps){ ## Step 4: Repeat steps 2 and 3 until we achieve the desired effective sample size (the effective sample size has not been coded yet, but I will write that up next)
