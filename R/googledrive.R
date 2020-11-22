@@ -15,7 +15,12 @@ datasets <- c("court_summons_hist","court_summons_ytd","shootings_hist",
               "shootings_ytd","mvc_crashes","mvc_person","mvc_vehicles",
               "arrests_hist","arrests_ytd","complaints_hist","complaints_ytd")
 
-pre_path <- 'https://docs.google.com/spreadsheets/d/'
+for(i in 1: length(datasets)){
+  
+  tmp = gs4_find(datasets[i])
+  tmp$drive_resource[1][[1]]$exportLinks$`text/csv`
+  
+}
 
-tmp = gs4_find(datasets[1])
-tmp$drive_resource[1][[1]]$exportLinks$`text/csv`
+
+pre_path <- 'https://docs.google.com/spreadsheets/d/'
