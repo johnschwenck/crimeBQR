@@ -1,5 +1,9 @@
 # Functions to perform Ada-Is Bayesian Spatial Quantile Regression
 
+library(fields)
+library(RandomFields)
+library(mvtnorm)
+library(Matrix)
 
 # Score Function according to paper
 get_score <- function(y, X, tau, beta){  ## outputs px1 vector
@@ -27,7 +31,8 @@ get_likelihood <- function(y, X, tau, beta, locs, C){  ## Outputs 1x1 scalar tha
 
 
 # Updated Parameters
-get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){  ## outputs list with mu (which is a p-length vector of estimated means) and S (which is the estimated pxp covariance matrix of the features) based on the given draw of values
+get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){  
+  ## outputs list with mu (which is a p-length vector of estimated means) and S (which is the estimated pxp covariance matrix of the features) based on the given draw of values
   n <- length(y)
   p <- ncol(X)
   
@@ -66,4 +71,64 @@ adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){  ## ## output
 }
 
 
-# 
+##############################################################################
+
+
+# Ada IS Algorithm for multiple quantiles
+# tau: an n x 1 vector of tau values
+adaIS_multipleQuantile <- function(y, X, tau, C, locs, M, num_reps, gam){
+  
+  if(!is.vector(tau)){
+    stop('tau must be an n x 1 length vector')
+  }
+  
+  tau <- as.vector(unlist(tau)) # in case input is a list
+  
+  #tm <- length(tau)
+  p <- ncol(X)
+  mu_list <- list()
+  S_list <- list()
+  
+  # Step 1:
+  for(i in 1:m){
+    #print(adaIS_singleQuantile(y, X, tau[i], C, locs, M, num_reps)) # for diagnosis purposes only
+    step1 <- adaIS_singleQuantile(y, X, tau[i], C, locs, M, num_reps)
+    mu_list[i] <- step1$mu
+    S_list[i] <- step1$S
+  }
+  
+  # Step 2:
+  # Matrix of mu vectors combined into one matrix
+  mu_mat <- matrix( unlist(mu_list) , ncol = p)
+  
+  # Block diagonal matrix with S_list elements along the diagonal
+  S_mat <- bdiag(S_list)
+  
+  for(i in 1:length(tau)){
+    for(j in 1:length(tau)){
+      
+      if (i < j) { # Only compute upper triangle for speed
+        out <- gam * (min(tau[i], tau[j]) - tau[i] * tau[j]) * 
+          solve( (tau[i] * (1 - tau[i]) * solve(tmp[[i]]) + tau[j] * (1 - tau[j]) * solve(tmp[[j]]) ) / 2)
+        
+        S_mat[ ( (i-1) * p + 1 ) : (i * p), ( (j-1) * p + 1 ) : (j * p) ] <- out
+        S_mat[ ( (j-1) * p + 1 ) : (j * p), ( (i-1) * p + 1 ) : (i * p) ] <- out
+        
+      }
+      
+    }
+  }
+  
+  out <- list(mu_mat, as.matrix(S_mat))
+  names(out) <- c("Mu_mat", "S_mat")
+  
+  # Step 3: 
+  
+  
+  
+  # Step 4:
+  
+  
+  
+  return(out)
+}
