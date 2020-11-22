@@ -1,7 +1,7 @@
 ---
 title: "Methods"
 author: "Marshall Honaker"
-output: pdf_document
+output: html_document
 urlcolor: blue
 ---
 First, let's import the necessary packages:
@@ -19,7 +19,8 @@ To begin, we will define so of the more basic, necessary functions. First, we wi
 # Basic Functions & Methods
 In the aforementioned paper, the score function is given by: $s_\tau (\beta) = \sum_{i = 1}^n x_i \psi_\tau (y_i - x_i^T \beta)$, where $\psi_\tau(u) = \tau - I_{\{ u < 0 \}}(u)$. Note that in this case, $\psi_\tau(.)$ is essentially the check-loss function mentioned earlier in the paper applied top the residuals. 
 ```{r}
-get_score <- function(y, X, tau, beta){  ## outputs px1 vector
+get_score <- function(y, X, tau, beta){  
+  ## outputs px1 vector
   u <- y - X%*%beta
   psi <- ifelse(u < 0, tau - 1, tau)
   return(t(X)%*%psi)
@@ -36,7 +37,8 @@ get_spatial_covar_mat <- function(locs){  ## outputs nxn spatial covariance matr
 
 Next, we will write a method to obtain a spatially adapted rendition of the proposed working likelihood function. The working likelihood function proposed in the paper is given by $L(Y | X, \beta) = C \exp\left( -\frac{1}{2n} s_\tau(\beta)^T W s_\tau(\beta) \right)$ where $W$ is a p x p weight matrix. Now, to account for the spatial variability/dependence within the data, we will instead use the sample Mahalanobis distance given by $(X - \hat{\mu})^T \Sigma^{-1} (X - \hat{\mu})$ where $\Sigma$ is the spatial covariance matrix. *Note that while the paper requires $W$ to be positive definite, the sample Mahalanobis matrix is only positive semi-definite. We will need to find a way to make sure that this this change will still lead to valid inference based on the posterior later on.*
 ```{r}
-get_likelihood <- function(y, X, tau, beta, locs, C){  ## Outputs 1x1 scalar that is the likelihood
+get_likelihood <- function(y, X, tau, beta, locs, C){ 
+  ## Outputs 1x1 scalar that is the likelihood
   score <- get_score(y, X, tau, beta)
   X_centered <- X - colMeans(X)
   coef <- -1/(2*length(y))
@@ -70,7 +72,8 @@ Wu & Narisetty describe an Importance Sampling (IS) procedure on pgs. 13-14. I'v
 
 The `get_updated_params()` function simply returns a list whose elements are the parameter values (the mean vector and the covariance matrix) for a given set of simulated observations. This makes the `adaIS_singleQuantile()` function a little more readable when we have to update the parameter values in each iteration.
 ```{r}
-get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){  ## outputs list with mu (which is a p-length vector of estimated means) and S (which is the estimated pxp covariance matrix of the features) based on the given draw of values
+get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){  
+  ## outputs list with mu (which is a p-length vector of estimated means) and S (which is the estimated pxp covariance matrix of the features) based on the given draw of values. This function performs step 3 in the paper
   n <- length(y)
   p <- ncol(X)
   
@@ -89,19 +92,19 @@ get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){  ## outputs 
   return(temp)
 }
 
-adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){  ## ## outputs list with mu (which is a p-length vector of estimated means) and S (which is the estimated pxp covariance matrix of the features) for the posterior distribution of our betas based on the IS algorithm
-  p <- ncol(X)
-  n <- length(y)
-  beta <- coef(lm(y ~ X))[-1]
-  S <- cov(X)
+adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){ 
+  ## outputs list with $mu (a p-length vector of estimated means) and $S (the estimated pxp covariance matrix of the features) for the posterior distribution of our betas based on the IS algorithm. This method runs the entire adaIS algorithm for a single quantile outlined in the paper
+  p <- ncol(X) ## Step1: Initialize starting values for IS algorithm
+  n <- length(y) ## Step1: Initialize starting values for IS algorithm
+  beta <- coef(lm(y ~ X))[-1] ## Step1: Initialize starting values for IS algorithm
+  S <- cov(X) ## Step1: Initialize starting values for IS algorithm
   
-  initial_draw <- rmvnorm(M, beta, S)
+  params <- list(beta, S)  ## Put out initial parameters into a list called params so we can update it in the loop and use the same name convention
+  names(params) <- c("mu", "S")
   
-  params <- get_updated_params(y, X, tau, beta, S, locs, initial_draw)
-  
-  for(i in 1:num_reps){
-    draws <- rmvnorm(M, params$mu, params$S)
-    params <- get_updated_params(y, X, tau, params$mu, params$S, locs, draws)
+  for(i in 1:num_reps){ ## Step 4: Repeat steps 2 and 3 until we achieve the desired effective sample size (the effective sample size has not been coded yet, but I will write that up next)
+    draws <- rmvnorm(M, params$mu, params$S)  ## Step 2: Simulate M values from the proposal distribution
+    params <- get_updated_params(y, X, tau, params$mu, params$S, locs, draws) ## Step 3: Update the parameter values using the simulated values from Step 2 and the importance weights 
   }
   return(params)
 }
