@@ -79,4 +79,25 @@ for(i in 1:length(tau)){
 bmat
 
 
+## Weight matrix as defined in paper
+get_likelihood <- function(y, X, tau, beta, locs, C){ 
+  ## Outputs 1x1 scalar that is the likelihood
+  score <- get_score(y, X, tau, beta)
+  X_centered <- X - colMeans(X)
+  coef <- -1/(2*length(y))
+  kernel <- exp(coef*t(score)%*%weight(X, tau)%*%score)
+  return(C*kernel)
+}
+
+weight <- function(X, tau){
+  n <- nrow(X)
+  temp <- X[1,]%*%t(X[1,])
+  for(i in 2:n){
+    temp <- temp + X[i,]%*%t(X[i,])
+  }
+  coef <- n/(tau*(1 - tau))
+  return(coef*solve(temp))
+}
+get_likelihood(y_train, X_train, .5, c(1, 1, 1, 1), locs, 1)
+
 
