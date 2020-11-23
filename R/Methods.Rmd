@@ -9,6 +9,7 @@ First, let's import the necessary packages:
 library(fields)
 library(RandomFields)
 library(mvtnorm)
+library(ggplot2)
 ```
 
 
@@ -31,7 +32,7 @@ I'm also going to define a function to obtain the spatial covaraince matrix. I'm
 ```{r}
 get_spatial_covar_mat <- function(locs){  ## outputs nxn spatial covariance matrix
   dist <- rdist(locs)
-  return(Matern(dist, range = .2, nu = 1.5))
+  return(Matern(dist, range = 1, nu = 6.5))
 }
 ```
 
@@ -92,6 +93,15 @@ get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){
   return(temp)
 }
 
+# get_effective_samp_size <- function(y, X, tau, beta, Sigma, locs, draw, M){
+#   My attempt to write a function to obtain the effecitve sample size of our IS draws. I tried to follow the formula at the bottom of pg. 13, but it doesn't seem to be working. The likelihood function just keeps returning zero for some reason. 
+#   p <- ncol(X)
+#   n <- length(y)
+#   w <- get_likelihood(y, X, tau, beta, locs, 1)*(1/(2*n)^p)/dmvnorm(draw, beta, Sigma)
+#   cv_sq <- ((M - 1)^(-1))*sum((w - mean(w))^2)/mean(w)^2
+#   return(M/(1 + cv_sq))
+# }
+
 adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){ 
   ## outputs list with $mu (a p-length vector of estimated means) and $S (the estimated pxp covariance matrix of the features) for the posterior distribution of our betas based on the IS algorithm. This method runs the entire adaIS algorithm for a single quantile outlined in the paper
   p <- ncol(X) ## Step 1: Initialize starting values for IS algorithm
@@ -121,7 +131,76 @@ get_updated_params(test_y, test_X, test_tau, test_beta, cov(test_X), locs, initi
 adaIS_singleQuantile(test_y, test_X, test_tau, 1, locs, m, 22)
 ```
 
-So everything seems to be working, thought it does need a little tuning/refinement. 
+So everything seems to be working, though it does need a little tuning/refinement. 
+
+Now, let's put everything together and conduct a more thorough simulation study.
+```{r}
+## First, let's simulate the locations
+n <- 1000
+locs <- as.data.frame(cbind(runif(n, 0, 100), runif(n, 0, 100)))
+colnames(locs) <- c("long", "lat")
+
+## Next, we will simulate the spatially dependent values
+sim_mod <- RMexp(var = 4, scale = 3) + 
+  RMnugget(var = .75) + 
+  RMtrend(mean = 1.5)
+sim_vals <- RFsimulate(sim_mod, x = locs$long, y = locs$lat)
+
+## Now, we will simulate the values of the response and the covariates 
+beta <- c(2, 2, 5, 5, 5, 5)
+X_sim <- cbind(rnorm(n, 10, 2), rexp(n, 5), rbeta(n, 5, 1), runif(n, 2.5, 7.5))
+y_sim <- beta[1]*locs$long + beta[2]*locs$lat + 
+  beta[3]*X_sim[,1] + beta[4]*X_sim[,2] + beta[5]*X_sim[,3] + beta[6]*X_sim[,4]
+
+## Next, we will split the data into training and test sets (75% of simulated values will be allocated to the training data set and the remaining 25% of simulated values will be used as test data)
+train_indices <- sample(1:n, round(.75*n), replace = FALSE)
+X_train <- X_sim[train_indices,]
+X_test <- X_sim[-train_indices,]
+y_train <- y_sim[train_indices]
+y_test <- y_sim[-train_indices]
+locs_train <- locs[train_indices,]
+locs_test <- locs[-train_indices,]
+
+## Now, to plot the training data
+sim_data <- as.data.frame(cbind(y_train, locs_train))
+sim_plot <- ggplot(data = sim_data, aes(x = long, y = lat)) + geom_point(aes(col = y_train, size = y_train)) +
+  labs(title = "Plot of Simulated Values at Simulated Locations",
+       x = "Longitude",
+       y = "Latitude",
+       col = "Response",
+       size = "Response")
+plot(sim_plot)
+
+## Now that we have the simulated data, we can check out the performance of our functions for a variety of quantile levels
+tau <- c(.01, .05, .1, .25, .5, .75, .9, .95)
+b <- beta[3:length(beta)]
+
+score_mat <- matrix(nrow = length(b), ncol = length(tau))
+for(i in 1:ncol(score_mat)){
+  score_mat[,i] <- get_score(y_train, X_train, tau[i], b)
+}
+score_mat
+
+likelihood_vec <- rep(NA, length(tau)) ## THERE'S AN ISSUE HERE
+for(i in 1:length(tau)){
+  likelihood_vec[i] <- get_likelihood(y_train, X_train, tau[i], b, locs_train, 1)
+}
+likelihood_vec
+
+test_draw <- rmvnorm(n, b, cov(X_train))
+mu_mat <- matrix(nrow = length(b), ncol = length(tau))
+S_list <- list()
+param_list <- list(mu_mat, S_list)
+names(param_list) <- c("mu", "S")
+for(i in 1:length(tau)){
+  x <- get_updated_params(y_train, X_train, tau[i], b, cov(X_train), locs_train, test_draw)
+  param_list$mu[,i] <- x$mu
+  param_list$S[[i]] <- x$S
+}
+param_list
+
+```
+
 
 # Issues so Far
 
@@ -140,4 +219,14 @@ Because the likelihood function $L(Y | X, \beta)$ is defined with respect to the
 ### UPDATE:
 I think the use of the term "score function" here may be a little misleading. Though I've never seen it defined in this way, I found [this slide deck](http://www.econ.uiuc.edu/~roger/NAKE/wk2.pdf) developed by Koenker himself which sheds a little light on the subject. After going through this (especially slide 15), I don't think $s_\tau(\beta)$ is the traditional "score" function (i.e; the gradient of the log-likelihood). It seems like when they said "score function" they meant "*rank*score function", which is another way of defining quantiles. It seems that the rankscore function actually comes from the quantile regression objective function $\hat{\beta}(\tau) = \arg \min_\beta \sum_{i = 1}^n \rho_\tau(y_i - x_i^T \beta)$  , there's no need to solve any sort of more complicated differential equation since the likelihood is no longer a function of its own derivative. 
 
+### Udates & Suggestions: 22 November
+On slide 18 of Lec3_ContinuousVariation_IntroGP.pdf, Dr. Sang states that the pairwise Mahalanobis distance between two points $s$ and $s'$ is given by $d = \sqrt{(s - s')^T U^T D^{-2} U (s - s')}$ when we have an anisotropic covariance structure that we want to stabilize by rotating and scaling the axes. The Mahalanobis structure we have right now is a little different from this, because we use the column centered feature matrix instead of the matrix of pairwise distances between observations. (That is, we use $(X - \mu)$ instead of $(s - s')$.) If we were to instead use the matrix of pairwise distances (I'd say Euclidean, but Manhattan could be fitting since we're working with data from New York), we would then have an entirely spatial Mahalanobis distance. However, to accomodate this we would probably also need to change the score function but we could make that reflect the percentiles of the locations as opposed to the features (so instead of return a px1 vecotr whose entries correspond to the each feature, the score would return a 2x1 vector whose entries coorespond to the percentile of the location[s]).
+
+Also, did I do that simulation study correctly? I know the spatial variation and nugget effect are right, but do I need to do anything else to make sure the dependence oif the features on the locations is correct?
+
+We should also add `predict` function that will make predictions for observations made at specified locations. I'll need to come up with something for the simulation study, but we can try to improve on this later.
+
+We should also probably find a way to select an appropriate value of C. I've been using 1 so far because it's a nice value that won't throw errors, but there might be a constant that gives better results.
+
+There's a problem with the likelihood function. It just keeps returning zero. I know the likelihood should be small, but should it be this small?
 
