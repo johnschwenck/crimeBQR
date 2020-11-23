@@ -32,7 +32,7 @@ I'm also going to define a function to obtain the spatial covaraince matrix. I'm
 ```{r}
 get_spatial_covar_mat <- function(locs){  ## outputs nxn spatial covariance matrix
   dist <- rdist(locs)
-  return(Matern(dist, range = 1, nu = 6.5))
+  return(Matern(dist, range = .2, nu = 1.5))
 }
 ```
 
