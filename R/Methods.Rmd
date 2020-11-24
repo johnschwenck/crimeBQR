@@ -10,6 +10,7 @@ library(fields)
 library(RandomFields)
 library(mvtnorm)
 library(ggplot2)
+library(matrixcalc)
 ```
 
 
@@ -18,63 +19,61 @@ Wu and Narisetty (2020) outline a score based likelihood approach to Bayesian mu
 To begin, we will define so of the more basic, necessary functions. First, we will define the score function. 
 
 # Basic Functions & Methods
-In the aforementioned paper, the score function is given by: $s_\tau (\beta) = \sum_{i = 1}^n x_i \psi_\tau (y_i - x_i^T \beta)$, where $\psi_\tau(u) = \tau - I_{\{ u < 0 \}}(u)$. Note that in this case, $\psi_\tau(.)$ is essentially the check-loss function mentioned earlier in the paper applied top the residuals. 
+In the aforementioned paper, the score function is given by: $s_\tau (\beta) = \sum_{i = 1}^n x_i \psi_\tau (y_i - x_i^T \beta)$, where $\psi_\tau(u) = \tau - I_{\{ u < 0 \}}(u)$. 
 ```{r}
-get_score <- function(y, X, tau, beta){  
-  ## outputs px1 vector
-  u <- y - X%*%beta
-  psi <- ifelse(u < 0, tau - 1, tau)
-  return(t(X)%*%psi)
+get_score<- function(y, X, tau, beta){ 
+  n <- nrow(X)
+  temp <- t(X[1,,drop=FALSE])*ifelse(y[1] - X[1,,drop=FALSE]%*%as.matrix(beta) < 0, tau  - 1, tau)[1,1]
+  for(i in 2:n){
+    temp <- temp + t(X[i,,drop=FALSE])*ifelse(y[i] - X[i,,drop=FALSE]%*%as.matrix(beta) < 0, tau  - 1, tau)[1,1]
+  }
+  return(temp)
 }
 ```
 
-I'm also going to define a function to obtain the spatial covaraince matrix. I'm going to set it to use the Matérn covariance function with $\nu$ = 1.5 and $\phi$ = 1.5 but we can change this later or make it more adaptive as need be.
+I'm also going to define a function to obtain the spatial covaraince matrix. This isn't necessary, but it will make the code later on more readable.
 ```{r}
 get_spatial_covar_mat <- function(locs){  ## outputs nxn spatial covariance matrix
   dist <- rdist(locs)
-  return(Matern(dist, range = .2, nu = 1.5))
+  return(exp(-dist/1.5))
 }
 ```
 
-Next, we will write a method to obtain a spatially adapted rendition of the proposed working likelihood function. The working likelihood function proposed in the paper is given by $L(Y | X, \beta) = C \exp\left( -\frac{1}{2n} s_\tau(\beta)^T W s_\tau(\beta) \right)$ where $W$ is a p x p weight matrix. Now, to account for the spatial variability/dependence within the data, we will instead use the sample Mahalanobis distance given by $(X - \hat{\mu})^T \Sigma^{-1} (X - \hat{\mu})$ where $\Sigma$ is the spatial covariance matrix. *Note that while the paper requires $W$ to be positive definite, the sample Mahalanobis matrix is only positive semi-definite. We will need to find a way to make sure that this this change will still lead to valid inference based on the posterior later on.*
+Next, we will write a method to obtain a spatially adapted version of the working likelihood function proposed in the paper. The function proposed in the paper is given by $L(Y | X, \beta) = C \exp\left( -\frac{1}{2n} s_\tau(\beta)^T W s_\tau(\beta) \right)$ where $W$ is a p x p positive definite weight matrix. To account for the spatial variability/dependence within the data, we will instead use following quantity inspired by the Mahalanobis Distance: $(X - \hat{\mu})^T \Sigma^{-1} (X - \hat{\mu})$, where $\Sigma^{-1}$ is the inverse of the spatial covariance matrix. 
+
+However, it is important to note that while the weight matrix proposed by the paper is positive definite, the quantity we use to replace it is only positive semi-definite. We have also omitted the exponentiation of the kernel of the likelihood function. (This yields sensible results when working with the Importance Sampling algorithm defined later on, but yields extremely large values which is very strange for a likelihood function.)
 ```{r}
 get_likelihood <- function(y, X, tau, beta, locs, C){ 
   ## Outputs 1x1 scalar that is the likelihood
   score <- get_score(y, X, tau, beta)
   X_centered <- X - colMeans(X)
-  coef <- -1/(2*length(y))
-  kernel <- exp(coef*t(score)%*%t(X_centered)%*%solve(get_spatial_covar_mat(locs))%*%X_centered%*%score)
-  return(C*kernel[1,1])
+  coef <- 1/(2*length(y))
+  kernel <- (coef*(t(score)%*%t(X_centered)%*%solve(get_spatial_covar_mat(locs))%*%X_centered%*%score)[1,1])
+  return(C*kernel)
 }
 ```
 
-## Testing basic methods
+## Test Basic Methods
 Now that we have defined the basic functions, let's test them to make sure they work.
 ```{r}
-n <- 100
-locs <- cbind(runif(n, 0, 10), runif(n, 0, 10))
-m1 <- RMexp(var = 2, scale = 1.5) + 
-  RMnugget(var = .1) + 
-  RMtrend(mean = 1)
-sim_vals <- RFsimulate(m1, x = locs[,1], y = locs[,2])
-test_X <- cbind(rnorm(n), rnorm(n), rnorm(n), rnorm(n))
-test_beta <- c(1, 2, 3, 4)
-test_y <- test_beta[2]*locs[,1] + test_beta[3]*locs[,2] + sim_vals$variable1
-test_tau <- .5
+response <- rnorm(500)
+feature_mat <- cbind(rnorm(500), rnorm(500))
+t <- .5
+B <- c(1, 1)
+l <- cbind(runif(500, 0, 10), runif(500, 0, 10))
 
-get_score(test_y, test_X, test_tau, test_beta)
-get_likelihood(test_y, test_X, test_tau, test_beta, locs, 1)
+get_score(response, feature_mat, t, B)
+get_likelihood(response, feature_mat, t, B, l, 1)
 ```
 
-So it seems like everything is working alright. Now let's move on to the importance sampling. 
+Everything seems to be working alright but we should keep an eye on the likelihood function. It seems to work for now, but the magnitude of the values produced is very strange for a likelihood function.  
 
 # Ada Importance Sampling for a Single Quantile Level
-Wu & Narisetty describe an Importance Sampling (IS) procedure on pgs. 13-14. I've done my best to code it here, but there are still some issues. I will discuss these issues later. 
+To approximate the posterior distribution of the model parameters, Wu & Narisetty implement an Importance Sampling (IS) procedure described on pgs. 13-16. The following code implements this IS algorithm. It runs, but we still need to check the accuracy and efficiency of the results. 
 
-The `get_updated_params()` function simply returns a list whose elements are the parameter values (the mean vector and the covariance matrix) for a given set of simulated observations. This makes the `adaIS_singleQuantile()` function a little more readable when we have to update the parameter values in each iteration.
 ```{r}
 get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){  
-  ## outputs list with mu (which is a p-length vector of estimated means) and S (which is the estimated pxp covariance matrix of the features) based on the given draw of values. This function performs step 3 in the paper
+  ## outputs list with elements mu (a p-length vector of estimated means) and S (the estimated pxp covariance matrix of the features) calculated from the simulated values given in draw. This performs Step 3 outlined in the paper
   n <- length(y)
   p <- ncol(X)
   
@@ -85,7 +84,7 @@ get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){
   S <- matrix(nrow = p, ncol = p)
   for(i in 1:p){
     for(j in 1:p){
-      S[i,j] <- sum(w*(draw[,i] - mu_hat[i])*(draw[,j] - mu_hat[j]))/(sum(w)*(n - 1))
+      S[i,j] <- sum(w*draw[,i]*draw[,j])/sum(w) - mu_hat[i]*mu_hat[j]
     }
   }
   temp <- list(mu_hat, S)
@@ -93,17 +92,17 @@ get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){
   return(temp)
 }
 
-# get_effective_samp_size <- function(y, X, tau, beta, Sigma, locs, draw, M){
-#   My attempt to write a function to obtain the effecitve sample size of our IS draws. I tried to follow the formula at the bottom of pg. 13, but it doesn't seem to be working. The likelihood function just keeps returning zero for some reason. 
-#   p <- ncol(X)
-#   n <- length(y)
-#   w <- get_likelihood(y, X, tau, beta, locs, 1)*(1/(2*n)^p)/dmvnorm(draw, beta, Sigma)
-#   cv_sq <- ((M - 1)^(-1))*sum((w - mean(w))^2)/mean(w)^2
-#   return(M/(1 + cv_sq))
-# }
+get_effective_samp_size <- function(y, X, tau, beta, Sigma, locs, draw, M){
+  ## Obtains Effective Sample Size
+  p <- ncol(X)
+  n <- length(y)
+  w <- get_likelihood(y, X, tau, beta, locs, 1)*(1/(2*n)^p)/dmvnorm(draw, beta, Sigma)
+  cv_sq <- ((M - 1)^(-1))*sum((w - mean(w))^2)/mean(w)^2
+  return(M/(1 + cv_sq))
+}
 
 adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){ 
-  ## outputs list with $mu (a p-length vector of estimated means) and $S (the estimated pxp covariance matrix of the features) for the posterior distribution of our betas based on the IS algorithm. This method runs the entire adaIS algorithm for a single quantile outlined in the paper
+  ## outputs a list with $mu (a p-length vector of estimated means) and $S (the estimated pxp covariance matrix of the features); the posterior mean vector and covariance matrix for the posterior distribution of the model parameters. This method runs the entire adaIS algorithm for a single quantile outlined in the paper
   p <- ncol(X) ## Step 1: Initialize starting values for IS algorithm
   n <- length(y) ## Step 1: Initialize starting values for IS algorithm
   beta <- coef(lm(y ~ X))[-1] ## Step 1: Initialize starting values for IS algorithm
@@ -120,20 +119,27 @@ adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){
 }
 ```
 
-Now, to test our IS method.
+## Test IS Algorithm
 ```{r}
 m <- 10000
-S_0 <- cov(test_X)
-initial_draw <- rmvnorm(m, test_beta, S_0)
+S_0 <- cov(feature_mat)
+initial_draw <- rmvnorm(m, B, S_0)
 
-get_updated_params(test_y, test_X, test_tau, test_beta, cov(test_X), locs, initial_draw)
+param_test <- get_updated_params(response, feature_mat, t, B, S_0, l, initial_draw)
+param_test  ## Check updated parameter values
+is.positive.definite(round(param_test$S, 7)) ## Make sure updated covariance matrix is positive definite
 
-adaIS_singleQuantile(test_y, test_X, test_tau, 1, locs, m, 22)
+posterior_param_test <- adaIS_singleQuantile(response, feature_mat, t, 1, l, m, 10)
+posterior_param_test ## Check posterior parameter values
+is.positive.definite(round(posterior_param_test$S, 7)) ## Make sure posterior covaraince matrix is positive definite
+
+get_effective_samp_size(response, feature_mat, t, B, cov(feature_mat), l, initial_draw, m)
 ```
 
 So everything seems to be working, though it does need a little tuning/refinement. 
 
-Now, let's put everything together and conduct a more thorough simulation study.
+# Simulation Study
+Now let's put everything together to conduct a more thorough simulation study.
 ```{r}
 ## First, let's simulate the locations
 n <- 1000
@@ -168,11 +174,12 @@ sim_plot <- ggplot(data = sim_data, aes(x = long, y = lat)) + geom_point(aes(col
        x = "Longitude",
        y = "Latitude",
        col = "Response",
-       size = "Response")
+       size = "Response") +
+  scale_color_gradient(low = "blue", high = "red", name = "Response")
 plot(sim_plot)
 
 ## Now that we have the simulated data, we can check out the performance of our functions for a variety of quantile levels
-tau <- c(.01, .05, .1, .25, .5, .75, .9, .95)
+tau <- c(.01, .05, .1, .25, .5, .75, .9, .95, .99)
 b <- beta[3:length(beta)]
 
 score_mat <- matrix(nrow = length(b), ncol = length(tau))
@@ -181,52 +188,55 @@ for(i in 1:ncol(score_mat)){
 }
 score_mat
 
-likelihood_vec <- rep(NA, length(tau)) ## THERE'S AN ISSUE HERE
+likelihood_vec <- rep(NA, length(tau)) 
 for(i in 1:length(tau)){
   likelihood_vec[i] <- get_likelihood(y_train, X_train, tau[i], b, locs_train, 1)
 }
 likelihood_vec
 
-test_draw <- rmvnorm(n, b, cov(X_train))
+draw <- rmvnorm(n, b, cov(X_train))
 mu_mat <- matrix(nrow = length(b), ncol = length(tau))
 S_list <- list()
 param_list <- list(mu_mat, S_list)
 names(param_list) <- c("mu", "S")
 for(i in 1:length(tau)){
-  x <- get_updated_params(y_train, X_train, tau[i], b, cov(X_train), locs_train, test_draw)
+  x <- get_updated_params(y_train, X_train, tau[i], b, cov(X_train), locs_train, draw)
   param_list$mu[,i] <- x$mu
   param_list$S[[i]] <- x$S
+  draw <- rmvnorm(n, x$mu, x$S)
 }
 param_list
+
+M <- 10000
+draw <- rmvnorm(n, b, cov(X_train))
+num_iters <- 10
+post_mu_mat <- matrix(nrow = length(b), ncol = length(tau))
+post_S_list <- list()
+post_ess <- rep(NA, length(tau))
+post_param_list <- list(post_mu_mat, post_S_list, post_ess)
+names(post_param_list) <- c("mu", "S", "ESS")
+for(i in 1:length(tau)){
+  temp <- adaIS_singleQuantile(y_train, X_train, tau[i], 1, locs_train, M, num_iters)
+  post_param_list$mu[,i] <- temp$mu
+  post_param_list$S[[i]] <- temp $S
+  post_param_list$ESS[i] <- get_effective_samp_size(y_train, X_train, tau[i], b, cov(X_train), locs_train, draw, M)
+}
+post_param_list
+
 
 ```
 
 
 # Issues so Far
 
-So it seems like the issue with the `adaIS_singleQuantile()` method is with the number of iterations of the IS, not the number of draws on each iteration. I was able to run the IS with 1000000 draws per iteration for 10 iterations and it ran just fine. (Generally, we seem to be able to make the number of draws as large as we want as long as the number of iterations is relatively low.) However, when we increase the number of iterations anywhere above ~13, we get the following error:
+In developing this novel approach to Bayesian spatial quantile regression, we have encountered several issues. We will list them here.
 
-`Error in eigen(sigma, symmetric = TRUE) : infinite or missing values in 'x'`
-
-I'm not entirely sure what is causing this, but I have two theories: 
-
-One, it could have something to do with the calculations for the posterior covariance matrix. I mentioned earlier, when we swap the weight matrix $W$ for the sample spatial Mahalanobis distance in the working likelihood, the formula for the posterior covariance given in the paper no longer yields a positive definite covariance matrix. I found a work around to get the IS to work in the short term, but it doesn't take into account the importance weights. 
-
-Two, this could actually be because we swapped the weight matrix for the sample spatial Mahalanobis distance. The paper specifies that $W$ must be positive definite, but the sample Mahalanobis distance is only positive *semi*-definite. That may explain why it doesn't work for larger iterations (eventually, the IS just randomly encounters the "semi-definite" case in which one of the Eigenvalues is effectively zero and it can't perform the necessary computations).
-
-Because the likelihood function $L(Y | X, \beta)$ is defined with respect to the score function $s_\tau(\beta)$ (that is, $L(Y | X, \beta) = C \exp\left( -\frac{1}{2n} s_\tau(\beta)^T (X - \hat{\mu})^T \Sigma^{-1} (X - \hat{\mu}) s_\tau(\beta) \right)$) and the score function is the gradient of the log-likelihood with respect to the parameters, we will need to solve a differential equation to get a functional form for the score function and likelihood.
-
-### UPDATE:
-I think the use of the term "score function" here may be a little misleading. Though I've never seen it defined in this way, I found [this slide deck](http://www.econ.uiuc.edu/~roger/NAKE/wk2.pdf) developed by Koenker himself which sheds a little light on the subject. After going through this (especially slide 15), I don't think $s_\tau(\beta)$ is the traditional "score" function (i.e; the gradient of the log-likelihood). It seems like when they said "score function" they meant "*rank*score function", which is another way of defining quantiles. It seems that the rankscore function actually comes from the quantile regression objective function $\hat{\beta}(\tau) = \arg \min_\beta \sum_{i = 1}^n \rho_\tau(y_i - x_i^T \beta)$  , there's no need to solve any sort of more complicated differential equation since the likelihood is no longer a function of its own derivative. 
-
-### Udates & Suggestions: 22 November
-On slide 18 of Lec3_ContinuousVariation_IntroGP.pdf, Dr. Sang states that the pairwise Mahalanobis distance between two points $s$ and $s'$ is given by $d = \sqrt{(s - s')^T U^T D^{-2} U (s - s')}$ when we have an anisotropic covariance structure that we want to stabilize by rotating and scaling the axes. The Mahalanobis structure we have right now is a little different from this, because we use the column centered feature matrix instead of the matrix of pairwise distances between observations. (That is, we use $(X - \mu)$ instead of $(s - s')$.) If we were to instead use the matrix of pairwise distances (I'd say Euclidean, but Manhattan could be fitting since we're working with data from New York), we would then have an entirely spatial Mahalanobis distance. However, to accomodate this we would probably also need to change the score function but we could make that reflect the percentiles of the locations as opposed to the features (so instead of return a px1 vecotr whose entries correspond to the each feature, the score would return a 2x1 vector whose entries coorespond to the percentile of the location[s]).
-
-Also, did I do that simulation study correctly? I know the spatial variation and nugget effect are right, but do I need to do anything else to make sure the dependence oif the features on the locations is correct?
-
-We should also add `predict` function that will make predictions for observations made at specified locations. I'll need to come up with something for the simulation study, but we can try to improve on this later.
-
-We should also probably find a way to select an appropriate value of C. I've been using 1 so far because it's a nice value that won't throw errors, but there might be a constant that gives better results.
-
-There's a problem with the likelihood function. It just keeps returning zero. I know the likelihood should be small, but should it be this small?
-
+* **Likelihood Function**: The working likelihood function in the original paper specifies a positive definite weight matrix $W$. To accommodate the spatial dependencies in our data, we instead used a spatially adjusted quantity inspired by the Mahalanobis Distance: $(X - \hat{\mu})^T \Sigma^{-1} (X - \hat{\mu})$, where $\Sigma^{-1}$ is the inverse of the spatially varying covariance matrix. 
+  + However, the quantity used to replace the sample Mahalanobis Distance is not positive definite (it is only positive semi-definite). The methods seem to work for the time being, but moving forward we should clarify what role this difference plays in the function and performance of the model.
+  + Furthermore, the spatially adapted Mahalanobis distance produces extremely large quantities. In the original function, the quadratic form of the score function and the weight matrix was exponentiated with a negative coefficient (that is, the kernel of the likelihood function was given by: $\exp\left( -\frac{1}{2n} s_\tau (\beta)^T W s_\tau (\beta) \right)$. However, when we replace this with the extremely large quantities generated by our spatially adapted Mahalanobis distance, the likelihood becomes effectively zero. This wreaks havoc with the rest of the code (since a likelihood of zero makes it difficult to do any calculations whatsoever) so we removed the exponentiation and the negative sign (on the coefficient) from the likelihood. This seems to yield reasonable posterior parameter estiamtes, but we will need to do some more testing to make sure that these posterior predictions are in fact accurate.
+  + How can we choose a value for $C$ in the likelihood function? I've been using 1 so far, since that will let the code run nicely for the simulation, but when we apply it to the actual data, how can we select a particular value? 
+  + Lastly, I think this approach makes sense, but I'd like to make sure that it isn't biased or will produce misleading results. (By using the spatial precision matrix instead of the precision matrix of the features, we are essentially scaling the feature centered observations using the )
+* **Evaluation of Simulations**: 
+  + In the paper, the authors mostly compare the performance of the IS algorithm to other well known MCMCs across various quantiles levels. We might be able to do this, but it could be difficult since there aren't many papers or packages that deal specifically with Bayesian spatial quantile regression. Instead, I might suggest comparing the results from our model/approach to the model/approach taken by the select few other papers that deal with this subject. (Namely, [Reich et al. (2011)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3583387/), [Ramsey (2019)](https://onlinelibrary-wiley-com.srv-proxy1.library.tamu.edu/doi/abs/10.1093/ajae/aaz029), and/or [King & Song (2016)](https://www.tandfonline.com/doi/abs/10.1080/02664763.2018.1508557?journalCode=cjas20)).
+  + Also, since this is a Bayesian model, it's a little trickier to makes predictions. (Since the model parameters are themselves random variables we can't just plug in the observations to get out predictions.) We will need to derive a posterior predictive distribution to do this. (I will do my best to derive this and code it as soon as possible.)
+* **"Score" Function**: The likelihood function relies on a "score" function given by: $s_\tau (\beta) = \sum_{i = 1}^n x_i \psi_\tau \left( y_i - x_i^T \beta \right)$. It should be noted that this is not the traditional definition of the "score" function commonly used in inference and likelihood based statistics, but instead the "rankscore" function, which is simply a more functional way of formulating regression quantiles. (Please see slide 15 of [Koenker (2003)](http://www.econ.uiuc.edu/~roger/NAKE/wk2.pdf) and [Guttenbrunner and Jurečková (1992)](https://projecteuclid.org/download/pdf_1/euclid.aos/1176348524)).
