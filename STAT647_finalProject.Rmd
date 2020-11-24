@@ -144,7 +144,7 @@ $$\hat\Sigma_{i,j} = \gamma(\min(\tau_i, \tau_j) - \tau_i \tau_j)\Bigg(\frac{(\t
 
 ## Simulation
 
-To assess the performance of the model and make sure that it works properly, we conducted a simulation study
+To assess the performance of the model and make sure that it works properly, we conduct a simulation study
 
 10,000 values of 5 covariates (each from a distinct distribution) taken from random locations on a 10x10 grid were used to generate simulated response values
 
