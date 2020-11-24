@@ -1,35 +1,179 @@
 ---
 title: "STAT 647 Final Presentation"
 author: "John Schwenck & Marshall Honaker"
-date: "11/23/2020"
-output: beamer_presentation
+date: "11/24/2020"
+output: 
+  beamer_presentation:
+    theme: "Madrid"
+    colortheme: "beaver"
+    fonttheme: "structurebold"
+urlcolor: "blue"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
-## R Markdown
+## Spatial Bayesian Multiple Quantile Regression Using Adaptive Importance Sampling
 
-This is an R Markdown presentation. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+\textbf{Motivation} 
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document.
+We propose a spatial adaptation of the \textit{Bayesian Multiple Quantile Regression for Linear Models Using a Score Likelihood} by  [Wu \& Narisetty (2020)](https://projecteuclid.org/euclid.ba/1596160823) and use the "Ada-IS" importance sampling algorithm for computing the posterior summaries.
 
-## Slide with Bullets
+\textbf{Example Application}
 
-- Bullet 1
-- Bullet 2
-- Bullet 3
+Draw inference about various crimes in NYC based on geographic region. Data from [\textit{NYC Open Data}](https://data.cityofnewyork.us/browse?Dataset-Information_Agency=Police+Department+%28NYPD%29).
 
-## Slide with R Output
 
-```{r cars, echo = TRUE}
-summary(cars)
-```
 
-## Slide with Plot
 
-```{r pressure}
-plot(pressure)
-```
+## Quantile Regression - Overview
+
+Oftentimes, the commonly used conditional mean regression is sensitive to extreme events / outliers and fails to characterize the entire distribution. Quantile regression (QR) can be utilized to investigate specific parts of a distribution.
+
+More formally, QR models the relationship between a \textit{p}-dimensional vector of covariates $\textbf{X} = \textbf{x}$ and $Q_\tau(Y|\textbf{x})$ where
+$$Q_{\tau}(Y|\textbf{x}) \equiv Q_{\tau}(Y|\textbf{X} = \textbf{x}) = \inf\{y : P(Y \leq y | X = \textbf{x}) \geq \tau \} = \textbf{x}^{\top}\boldsymbol{\beta} $$  where $\tau \in (0,1)$
+
+The objective function for QR is therefore: $$\boldsymbol{\widehat{\beta}} = \arg\min_{\beta}\sum_{i = 1}^{n}{\rho_{\tau}(y_{i} - \textbf{x}_{i}^{\top}\boldsymbol{\beta})}$$ where the check loss function is given by $\rho_{\tau}(u) = u(\tau - I(u < 0))$
+
+
+
+
+## Quantile Regression - Overview
+
+\textbf{Remark}
+
+- QR does not make any assumptions about a parametric likelihood which is problematic for the Bayesian framework for the posterior estimation. 
+- Previous attempts have made use of the Asymmetric Laplace Distribution, but without valid frequentist inference. The paper successfully incorporated a \textit{working} likelihood to incorporate the check loss function
+
+
+
+
+## Spatial Bayesian Multiple Quantile Regression - Interpretation
+
+In the Bayesian framework, testing & inference about multiple quantile levels re-parameterize the QR model with $\theta = \beta_1(\tau_1) - \beta_2(\tau_2)$ and test for differences in the slope (i.e. whether $\theta = 0$). The hypotheses for two different quantiles ($\tau_1 > \tau_2$) would be stated as follows: 
+$$H_0:\beta_1(\tau_1) = \beta_2(\tau_2) \mbox{  vs  } H_1:\beta_1(\tau_1) \neq \beta_2(\tau_2)$$
+
+\textbf{Interpretation}
+
+- Test whether the effects of the first covariate $X_1$ on $Y$ are different for quantiles $\tau_1$ and $\tau_2$ based on the location
+- If 0 is not within the credible interval of the posterior, reject $H_0$
+
+
+
+
+
+## Spatial Bayesian Multiple Quantile Regression - Method
+
+The authors define the ***score function*** as a p-dimensional vector of the following form:
+$$s_\tau(\beta) = \sum_{i=1}^{n}x_i\psi_i(y_i - x_i^{\top}\beta)$$ where $\psi_i(u) = \tau - I(u<0)$
+
+*Note:*
+
+- since $\hat\beta(\tau)$ minimizes the quantile loss function, $s_\tau(\hat\beta(\tau)) \approx 0$
+
+
+
+
+
+## Spatial Bayesian Multiple Quantile Regression - Method
+
+The authors also propose the following as the ***working likelihood***:
+$$L(\beta) = L(Y|X,\beta) = C\exp\bigg\{\frac{-1}{2n}s_\tau(\beta)^{\top}\boldsymbol{W}s_\tau(\beta)\bigg\}$$ where $\textbf{W}$ is a $p\times p$ positive definite matrix given by $$\textbf{W} = \frac{n}{\tau(1-\tau)}\Bigg(\sum_{i=1}^nx_ix_i^{\top}\Bigg)^{-1}$$ and $C$ is a normalizing constant free of $\beta$
+
+
+## Spatial Bayesian Multiple Quantile Regression - Method
+
+However, in order to properly account for the spatial dependencies in the data, we reformulate the weight matrix $\textbf{W}$ with our own non-parametric approach using a spatial spline-based weight matrix
+
+
+
+
+## Importance Sampling
+
+Importance sampling gives us a way to approximate quantities of interest for a given distribution, even if we can't directly sample from that particular distribution
+
+$$\mathbb{E}_{\color{red}{g}}[X] = \sum_xx\frac{ \color{red}{g(x)} }{ \color{blue}{f(x)} }{ \color{blue}{f(x)} } = \mathbb{E}_{\color{blue}{f}}\bigg[X\frac{g(x)}{f(x)}\bigg] $$
+
+So, 
+
+$$\mathbb{E}_g(X) \approx \frac{1}{n}\sum_{i=1}^nx_i\frac{g(x_i)}{f(x_i)}$$ where $w_i = \frac{g(x_i)}{f(x_i)}$ are the importance sampling weights
+
+
+
+
+## Algorithm - Single Quantile
+
+1. Initialize the proposal distribution with a linear mean (or median) regression model where $q(\boldsymbol{b}) = N(\boldsymbol{a}, \hat{\Sigma})$ with 
+$$\hat{\Sigma} = c\tau(1-\tau)\Bigg(\sum_{i=1}^{n}x_ix_i^{\top}/n\Bigg)^{-1}$$
+2. Generate samples $b^{(1)}, b^{(2)}, ..., b^{(m)}$ from $q(b)$ for some large $M$ and calculate the importance weights $$w^{(r)} = \frac{L(b^{(r)})\pi(b^{(r)})}{q(b^{(r)})}$$ and Effective Sample Size $ESS = \frac{M}{1 + cv^2}$ where $cv^2 = \frac{(M-1)^{-1}\sum_{r=1}^{M}(w^{(r)} - \bar{w})^2}{\bar{w}^2}$ and $\bar{w} = \frac{1}{n}\sum_{r=1}^{M}w^{(r)}$
+
+
+
+
+## Algorithm - Single Quantile
+
+3. Estimate posterior mean and covariance:
+$$\boldsymbol{\hat\mu} = (\hat\mu_1, ..., \hat\mu_m) = \frac{\sum_{i=1}^{M}w^{(r)}\textbf{b}^{(r)}}{\sum_{i=1}^{M}w^{(r)}}$$
+and $$\hat\sigma_{j,k} =  \frac{\sum_{r=1}^{M}w^{(r)}\textbf{b}_j^{(r)}\textbf{b}_k^{(r)}}{\sum_{r=1}^{M}w^{(r)}} - \hat\mu_j\hat\mu_k$$
+for the $jk^{th}$ entry of the posterior covariance matrix where $b_j^{(r)}$ is the $j^{th}$ coordinate of $b^{(r)}$
+
+4. Use the mean and covariance matrix from (3) to form a new normal proposal distribution and repeat steps 2-4 a pre-specified number of times
+
+5. Estimate posterior mean and covariance using importance sampling from the final proposal distribution from (4)
+
+
+
+
+
+
+## Algorithm - Multiple Quantiles
+
+1. Implement the Ada-IS algorithm for a single quantile separately for each $\tau \in \{\tau_1, ..., \tau_m\}$ which will result in $(\boldsymbol{\hat\mu_1}, ..., \boldsymbol{\hat\mu_m})$ and $(\boldsymbol{\hat\Sigma_1}, ..., \boldsymbol{\hat\Sigma_m})$
+
+2. Use an mp-dimensional multivariate normal proposal with the results from (1) as the mean and block diagonal joint covariance, respectively. The off diagonal covariances for quantile levels $\tau_i, \tau_j$ are imputed using the following:
+$$\hat\Sigma_{i,j} = \gamma(\min(\tau_i, \tau_j) - \tau_i \tau_j)\Bigg(\frac{(\tau_i(1-\tau_i)\hat\Sigma_i^{-1}+\tau_j(1-\tau_j)\hat\Sigma_j^{-1})}{2}\Bigg)^{-1}$$
+
+3. Generate samples from the proposal distribution and estimate the mean and covariance matrix and perform (3) from the single quantile QR described previously
+
+4. Repeat a pre-specified number of times and estimate the posterior using the importance samples from (3) above
+
+
+
+
+
+## Simulation
+
+This is text about simulation
+
+
+
+
+## Real-World Application - NYC Crime Data
+
+To apply our method, we obtained data from the NYC Open Data API via Python. Due to size limits, we had to constrain our data to 5 GB worth which includes all historical and YTD data. All variables included a corresponding latitude and longitude.
+
+\textbf{Response:} Location-based crime severity index
+
+\textbf{Covariates:}
+
+- Shootings by location and demographics
+- Arrests by location and demographics
+- Motor vehicle crashes / injuries by location
+- Crime complaints by location and crime type
+- Court summons by location
+- Income by district
+
+Given different levels of the crime index, the effects of the covariates change according to the quantile level
+
+
+
+
+
+## Future Directions
+
+- Convert coding bottlenecks to C++ / Rcpp for improved speed
+- Incorporate Kernel Basis Functions to non-parametrically estimate weight matrix
+- Apply our method to other cities that offer open source crime data
+
 
