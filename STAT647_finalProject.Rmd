@@ -18,7 +18,7 @@ knitr::opts_chunk$set(echo = FALSE)
 
 \textbf{Motivation} 
 
-We propose a spatial adaptation of the \textit{Bayesian Multiple Quantile Regression for Linear Models Using a Score Likelihood} by  [Wu \& Narisetty (2020)](https://projecteuclid.org/euclid.ba/1596160823) and use the "Ada-IS" importance sampling algorithm for computing the posterior summaries.
+We propose a spatial adaptation of the score-based likelihood approach to quantiel regression proposed in \textit{Bayesian Multiple Quantile Regression for Linear Models Using a Score Likelihood} by  [Wu \& Narisetty (2020)](https://projecteuclid.org/euclid.ba/1596160823) and use the "Ada-IS" importance sampling algorithm to approximate posterior summaries
 
 \textbf{Example Application}
 
@@ -29,7 +29,7 @@ Draw inference about various crimes in NYC based on geographic region. Data from
 
 ## Quantile Regression - Overview
 
-Oftentimes, the commonly used conditional mean regression is sensitive to extreme events / outliers and fails to characterize the entire distribution. Quantile regression (QR) can be utilized to investigate specific parts of a distribution.
+Oftentimes, conditional mean regression is sensitive to extreme events/outliers and fails to adequately describe these characteristics of the underlying population. Quantile regression (QR) can be used to investigate specific parts of a distribution
 
 More formally, QR models the relationship between a \textit{p}-dimensional vector of covariates $\textbf{X} = \textbf{x}$ and $Q_\tau(Y|\textbf{x})$ where
 $$Q_{\tau}(Y|\textbf{x}) \equiv Q_{\tau}(Y|\textbf{X} = \textbf{x}) = \inf\{y : P(Y \leq y | X = \textbf{x}) \geq \tau \} = \textbf{x}^{\top}\boldsymbol{\beta} $$  where $\tau \in (0,1)$
@@ -37,14 +37,12 @@ $$Q_{\tau}(Y|\textbf{x}) \equiv Q_{\tau}(Y|\textbf{X} = \textbf{x}) = \inf\{y : 
 The objective function for QR is therefore: $$\boldsymbol{\widehat{\beta}} = \arg\min_{\beta}\sum_{i = 1}^{n}{\rho_{\tau}(y_{i} - \textbf{x}_{i}^{\top}\boldsymbol{\beta})}$$ where the check loss function is given by $\rho_{\tau}(u) = u(\tau - I(u < 0))$
 
 
-
-
 ## Quantile Regression - Overview
 
 \textbf{Remark}
 
-- QR does not make any assumptions about a parametric likelihood which is problematic for the Bayesian framework for the posterior estimation. 
-- Previous attempts have made use of the Asymmetric Laplace Distribution, but without valid frequentist inference. The paper successfully incorporated a \textit{working} likelihood to incorporate the check loss function
+- QR does not make any assumptions about a parametric likelihood which is problematic for the Bayesian framework for the posterior estimatio. 
+- Previous attempts have used the Asymmetric Laplace Distribution. However, inference procedures based on the posteriors from these procedures are not valid. This paper proposes a \textit{working} likelihood that incorporates the check loss function (this allows for valid frequentist inference procedures based on the posterior distribution)
 
 
 
@@ -79,12 +77,14 @@ $$s_\tau(\beta) = \sum_{i=1}^{n}x_i\psi_i(y_i - x_i^{\top}\beta)$$ where $\psi_i
 ## Spatial Bayesian Multiple Quantile Regression - Method
 
 The authors also propose the following as the ***working likelihood***:
-$$L(\beta) = L(Y|X,\beta) = C\exp\bigg\{\frac{-1}{2n}s_\tau(\beta)^{\top}\boldsymbol{W}s_\tau(\beta)\bigg\}$$ where $\textbf{W}$ is a $p\times p$ positive definite matrix given by $$\textbf{W} = \frac{n}{\tau(1-\tau)}\Bigg(\sum_{i=1}^nx_ix_i^{\top}\Bigg)^{-1}$$ and $C$ is a normalizing constant free of $\beta$
+$$L(\beta) = L(Y|X,\beta) = C\exp\bigg\{-\frac{1}{2n}s_\tau(\beta)^{\top}\boldsymbol{W}s_\tau(\beta)\bigg\}$$ where $\textbf{W}$ is a $p\times p$ positive definite matrix given by $$\textbf{W} = \frac{n}{\tau(1-\tau)}\Bigg(\sum_{i=1}^nx_ix_i^{\top}\Bigg)^{-1}$$ and $C$ is a normalizing constant free of $\beta$
+
+
 
 
 ## Spatial Bayesian Multiple Quantile Regression - Method
 
-However, in order to properly account for the spatial dependencies in the data, we reformulate the weight matrix $\textbf{W}$ with our own non-parametric approach using a spatial spline-based weight matrix
+To account for the spatial dependencies in the data, we augment the weight matrix $\textbf{W}$ with spatial basis functions to smooth and account for the spatial variability
 
 
 
@@ -144,8 +144,15 @@ $$\hat\Sigma_{i,j} = \gamma(\min(\tau_i, \tau_j) - \tau_i \tau_j)\Bigg(\frac{(\t
 
 ## Simulation
 
-This is text about simulation
+To assess the performance of the model and make sure that it works properly, we conducted a simulation study
 
+10,000 values of 5 covariates (each from a distinct distribution) taken from random locations on a 10x10 grid were used to generate simulated response values
+
+For the augmented feature matrix approach, the simulation will allow us to test other aspects of the model, such as:
+
+1. Effects of different numbers of bases (though this could be chosen using cross validation)
+2. Predictions and approximations to the posterior predictive distribution (this will also allow us to compute training and test errors)
+3. Assess validity of frequentist inference procedures based on the posterior (are we able to retain this property from Bayesian QR model proposed in the original paper?)
 
 
 
@@ -175,5 +182,6 @@ Given different levels of the crime index, the effects of the covariates change 
 - Convert coding bottlenecks to C++ / Rcpp for improved speed
 - Incorporate Kernel Basis Functions to non-parametrically estimate weight matrix
 - Apply our method to other cities that offer open source crime data
+- Addition of regularization term(s) to the objective function (what can we learn if certain variables are included/larger at certain quantile levels but not at others?)
 
 
