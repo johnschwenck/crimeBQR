@@ -43,12 +43,38 @@ Next, we will write a method to obtain a spatially adapted version of the workin
 
 However, it is important to note that while the weight matrix proposed by the paper is positive definite, the quantity we use to replace it is only positive semi-definite. We have also omitted the exponentiation of the kernel of the likelihood function. (This yields sensible results when working with the Importance Sampling algorithm defined later on, but yields extremely large values which is very strange for a likelihood function.)
 ```{r}
+# X: original design matrix with first two columns corresponding to coordinates
+# b: # of bases --> default to 20 *
+# k: # of knots
+X_combined <- function(X, b, k, locs){ 
+  
+  coords <- locs
+  B = bs(1:nrow(X), df = b) # use B-splines using n of X and df = # of bases --> dim: n x b matrix
+
+  spline_smooth <- eval_basis(B, coords) # fix... n x "basis" smooth matrix <-- (n x b) & (n x 2)
+  X_basis <- cbind(X, spline_smooth) # n x (p + "basis") <-- n x p original feature matrix "+" n x "basis" smooth matrix (bind not add)
+  
+  return(X_basis) #n x (p + "basis")
+}
+
+# X = X_basis from  X_combined function
+weight <- function(X, tau){
+  n <- nrow(X)
+  temp <- X[1,]%*%t(X[1,])
+  for(i in 2:n){
+    temp <- temp + X[i,]%*%t(X[i,])
+  }
+  coef <- n/(tau*(1 - tau))
+  return(coef*solve(temp))
+}
+
 get_likelihood <- function(y, X, tau, beta, locs, C){ 
   ## Outputs 1x1 scalar that is the likelihood
   score <- get_score(y, X, tau, beta)
-  X_centered <- X - colMeans(X)
-  coef <- 1/(2*length(y))
-  kernel <- (coef*(t(score)%*%t(X_centered)%*%solve(get_spatial_covar_mat(locs))%*%X_centered%*%score)[1,1])
+  #X_centered <- X - colMeans(X)
+  coef <- -1/(2*length(y))
+  weight_X <- weight() # fix...
+  kernel <- exp(coef*(t(score)%*%weight_X%*%score)[1,1])
   return(C*kernel)
 }
 ```

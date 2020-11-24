@@ -80,7 +80,7 @@ bmat
 
 
 ## Weight matrix as defined in paper
-get_likelihood <- function(y, X, tau, beta, locs, C){ 
+get_likelihood <- function(y, X, tau, beta, locs, C, weight){ 
   ## Outputs 1x1 scalar that is the likelihood
   score <- get_score(y, X, tau, beta)
   X_centered <- X - colMeans(X)
@@ -89,6 +89,22 @@ get_likelihood <- function(y, X, tau, beta, locs, C){
   return(C*kernel)
 }
 
+
+# X: original design matrix with first two columns corresponding to coordinates
+# b: # of bases --> default to 20 *
+# k: # of knots
+X_combined <- function(X, b, k, locs){ 
+  
+  coords <- locs
+  B = bs(1:nrow(X), df = b) # use B-splines using n of X and df = # of bases --> dim: n x b matrix
+
+  spline_smooth <- eval_basis(B, coords) # fix... n x "basis" smooth matrix <-- (n x b) & (n x 2)
+  X_basis <- cbind(X, spline_smooth) # n x (p + "basis") <-- n x p original feature matrix "+" n x "basis" smooth matrix (bind not add)
+  
+  return(X_basis) #n x (p + "basis")
+}
+
+# X = X_basis from  X_combined function
 weight <- function(X, tau){
   n <- nrow(X)
   temp <- X[1,]%*%t(X[1,])
