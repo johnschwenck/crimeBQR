@@ -98,6 +98,6 @@ weight <- function(X, tau){
   coef <- n/(tau*(1 - tau))
   return(coef*solve(temp))
 }
-get_likelihood(y_train, X_train, .5, c(1, 1, 1, 1), locs, 1)
+
 
 
