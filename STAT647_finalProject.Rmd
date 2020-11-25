@@ -41,7 +41,7 @@ The objective function for QR is therefore: $$\boldsymbol{\widehat{\beta}} = \ar
 
 \textbf{Remark}
 
-- QR does not make any assumptions about a parametric likelihood which is problematic for the Bayesian framework for the posterior estimatio. 
+- QR does not make any assumptions about a parametric likelihood which is problematic for the Bayesian framework for the posterior estimation. 
 - Previous attempts have used the Asymmetric Laplace Distribution. However, inference procedures based on the posteriors from these procedures are not valid. This paper proposes a \textit{working} likelihood that incorporates the check loss function (this allows for valid frequentist inference procedures based on the posterior distribution)
 
 
