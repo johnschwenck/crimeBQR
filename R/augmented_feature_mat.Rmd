@@ -39,9 +39,9 @@ X_basis <- eval_basis(G, coords)
 dim(X_basis)
 ```
 
-As can be seen above, this code generates an n x (b + ) matrix, where b is the maximum number of bases specified. I think that each column corresponds to one of the bases and that the additional column(s) are additional smoothing components, such as the truncated power basis function. (See [ISLR](http://faculty.marshall.usc.edu/gareth-james/ISL/ISLR%20Seventh%20Printing.pdf) pgs. 273-274.) 
+As can be seen above, this code generates an n x s matrix, where s is the number of total splines. I think that each column corresponds to one of the bases and that the additional column(s) are additional smoothing components, such as the truncated power basis function. (See [ISLR](http://faculty.marshall.usc.edu/gareth-james/ISL/ISLR%20Seventh%20Printing.pdf) pgs. 273-274.) 
 
-With this, we can generate the `X_basis` in Dr. Sang's suggestion. However, I'm a little uncertain what she means by `beta_spline`. I think she's referring to the coefficient estimates from the regression spline using `X_basis` as the the feature matrix, but this very well could be wrong. (Discuss as needed, confirm with Dr. Sang if still not sure.) 
+With this, we can generate the `X_basis` in Dr. Sang's suggestion. However, I'm a little uncertain what she means by `beta_spline`. I think she's referring to the coefficient estimates from the regression spline using `X_basis` as the the feature matrix (that is, the beta from the spline), but this very well could be wrong. (Discuss as needed, confirm with Dr. Sang if still not sure.) 
 
 However, in case this is in fact what she's talking about (and to see how it works if it is) let's code up a demo here.
 ```{r}
@@ -64,11 +64,11 @@ augmented_feature_mat <- function(y, X, locs){
                   nres = 2, type = "bisquare")
   spatial_basis <- as.matrix(eval_basis(G, locs))
   beta_spline <- coef(lm(y ~ spatial_basis))[-1]  ## See item (1) below
-  return(cbind(X, spatial_basis%*%beta_spline)[,-1])
+  return(cbind(X, spatial_basis%*%beta_spline)[,-1]) ## See item (6) below
 }
 ```
 
-Now, let's copy and paste all of the functions from the method file over so we can run them here and see how they interact with our newly defined augmented feature matrix.
+Now, let's copy and paste all of the functions from the `Method.rmd` file over so we can run them here and see how they interact with our newly defined augmented feature matrix.
 ```{r}
 get_score<- function(y, X, tau, beta){  ## See item (2) below
   n <- nrow(X)
@@ -103,8 +103,8 @@ A few comments on the methods above:
 1. We need to make sure that Dr. Sang is actually talking about using the coefficients from the regression splines using the simulated bases as the feature matrix. (I think she is, because then `X_basis%*%beta_spline` would be the estimated values from that regression.)
 2. The `get_score()` function outputs a p length vector whose entries correspond to the features in the feature matrix. The last element in this vector (corresponding to the additional column we get by appending `X_basis%*%beta_spline` to out original feature matrix) is much larger than the others, so we should keep an eye on this.
 3. I deleted the `get_spatial_covar_mat()` function because we no longer need it.
-4. The paper specifies that the weight matrix $W$ must be positive definite. Even though we followed the definition for $W$ given in the paper to a tee, our function doesn't return a positive definite matrix if you consider the eighth decimal place in each entry. Since the eighth decimal isn't especially significant in the grand scheme of things, I added the `round(., 7)` method to make sure that our methods returns a weight matrix that satisfies the positive definiteness requirement.
-5. I have no idea how to come up with better values of $C$ in the likelihood function. I need to read through the paper some more to figure out how they did it.
+4. The paper specifies that the weight matrix $W$ must be positive definite. Even though we followed the definition for $W$ given in the paper to a tee, our function doesn't return a positive definite matrix if you consider the eighth decimal place of each entry. Since the eighth decimal isn't especially significant in the grand scheme of things, I added the `round(., 7)` method to make sure that the method returns a weight matrix that satisfies the positive definiteness requirement.
+5. I have no idea how to come up with good values of $C$ in the likelihood function. I've been using $C = 1$ so far just so the code will run and play nice. I need to read through the paper some more to figure out how they did it.
 6. The `augmented_feature_mat()` method was returning a feature matrix with the column of 1s for the intercept. `R` will include this automatically, so I modified `return()` statement so the output would not include this column.
 
 Next, let's look at the methods for the Importance Sampling algorithm for a single quantile.
@@ -203,7 +203,7 @@ lik <- get_likelihood(y_train, X_augmented, tau, beta, locs_train, 1)
 lik
 ```
 
-As can be seen above, the code for the more basic methods runs. However, we still run into the same issues we encountered earlier. 
+As can be seen above, the code for the more basic methods runs. However, we still run into the same issues we discussed earlier. 
 
 Now, let's move on to the Importance Sampling methods.
 ```{r}
@@ -216,7 +216,7 @@ pars
 ## get_updated_params() isn't working, so we can't expect adaIS_singleQuantile() to work either
 ```
 
-
+Because this is a Bayesian regression model, we will need to derive the posterior predictive distribution to make predictions at the test locations using the test data. Once the Importance Sampling methods work and give us proper values for the parameters of the posterior distribution, we can make the desired predictions to evaluate the predictive performance of our model. 
 
 
 
