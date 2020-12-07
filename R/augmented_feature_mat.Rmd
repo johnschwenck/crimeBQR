@@ -17,16 +17,14 @@ library(gstat)
 library(GpGp)
 ```
 
-So this is my attempt to code up Dr. Sang's suggestions from the last email we sent her. Her main suggestion was that modifying the structure of the likelihood function (like we tried to do using the spatial Mahanobis distance) in a valid way would be exceptionally difficult. Instead, a more feasible approach might be to simply augment the feature matrix by appending "a set of spatial basis functions such as splines or bisques." ([Bisques](https://cran.r-project.org/web/packages/bisque/bisque.pdf) seem to be a fairly recent development, so while it would be really cool to use them, for the sake of getting the assignment turned in on time I think it might be best to stick with the simpler spline functions for the time being. If we decide to try to publish this, we can explore bisque functions a little more and add in a feature to let the user choose which will be used when generating the augmented feature matrix.)
+Dr. Sang's recommendations:
 
-Dr. Sang's recommendations were given as follows:
-
-> The model is Y=quantile regression (X_beta+ X_basis*beta_spline)
+> The model is Y=quantile regression (X_beta + X_basis*beta_spline)
 We can then use the current framework, but now with 
 (p+# of basis)  estimating equations, and the working weight matrix is calculated using 
 X=(covariates, spatial basis covariates). 
 
-Dr. Sang also provided some sample code that can be used to generate the desired basis:
+Sample code provided by Dr. Sang:
 ```{r}
 library(FRK)
 n <- 500
@@ -39,36 +37,22 @@ X_basis <- eval_basis(G, coords)
 dim(X_basis)
 ```
 
-As can be seen above, this code generates an n x s matrix, where s is the number of total splines. I think that each column corresponds to one of the bases and that the additional column(s) are additional smoothing components, such as the truncated power basis function. (See [ISLR](http://faculty.marshall.usc.edu/gareth-james/ISL/ISLR%20Seventh%20Printing.pdf) pgs. 273-274.) 
+*We can use this to generate the matrix of spatial basis covariates that we will append to the original feature matrix.*
 
-With this, we can generate the `X_basis` in Dr. Sang's suggestion. However, I'm a little uncertain what she means by `beta_spline`. I think she's referring to the coefficient estimates from the regression spline using `X_basis` as the the feature matrix (that is, the beta from the spline), but this very well could be wrong. (Discuss as needed, confirm with Dr. Sang if still not sure.) 
-
-However, in case this is in fact what she's talking about (and to see how it works if it is) let's code up a demo here.
-```{r}
-response <- rnorm(n)
-X <- cbind(rnorm(n), rnorm(n))
-beta_spline <- as.matrix(coef(lm(response ~ as.matrix(X_basis)))[-1])
-augmented_column <- as.matrix(X_basis)%*%beta_spline
-dim(augmented_column)
-dim(X)
-augmented_test_mat <- cbind(X, augmented_column)
-dim(augmented_test_mat)
-```
-
-At this point, we have generated an augmented feature matrix, but is it correct? If we assume that `beta_spline` does in fact refer to the coefficients from the regression spline, then the result of multiplying `X-basis` (n x s) by `beta_spline` (s x 1) (like Sang mentions in her suggestion) results in an n x 1 column vector. While it's easy enough to append this to our existing feature matrix, does appending a single column actually help us account for the spatial variability in our data? I'm not convinced that it does. (More on this to come.) 
-
-For now though, let's type it all up and see if it works. First, let's generalize this and put it into a function that will return the augmented feature matrix. (As we have defined it so far.)
+Next we will write a method to obtain the desired augmented feature matrix. We will scale each spatial basis covariate by its $L^2$ norm.
 ```{r}
 augmented_feature_mat <- function(y, X, locs){
   G <- auto_basis(manifold = plane(), data = locs, regular = 0, max_basis=20,
                   nres = 2, type = "bisquare")
   spatial_basis <- as.matrix(eval_basis(G, locs))
-  beta_spline <- coef(lm(y ~ spatial_basis))[-1]  ## See item (1) below
-  return(cbind(X, spatial_basis%*%beta_spline)[,-1]) ## See item (6) below
+  for(i in 1:ncol(spatial_basis)){
+    spatial_basis[,i] <- spatial_basis[,i]/sqrt(sum(spatial_basis[,i]^2))
+  }
+  return(as.matrix(cbind(X, spatial_basis))[,-1]) ## See item (1) below
 }
 ```
 
-Now, let's copy and paste all of the functions from the `Method.rmd` file over so we can run them here and see how they interact with our newly defined augmented feature matrix.
+Now, let's move on to the more rudimentary functions of our 
 ```{r}
 get_score<- function(y, X, tau, beta){  ## See item (2) below
   n <- nrow(X)
@@ -86,7 +70,7 @@ weight <- function(X, tau){  ## See item (4) below
     temp <- temp + X[i,]%*%t(X[i,])
   }
   coef <- n/(tau*(1 - tau))
-  return(round(coef*solve(temp), 7))
+  return(coef*solve(temp))
 }
 
 get_likelihood <- function(y, X, tau, beta, locs, C){ ## See item (5) below
@@ -100,12 +84,11 @@ get_likelihood <- function(y, X, tau, beta, locs, C){ ## See item (5) below
 
 A few comments on the methods above:
 
-1. We need to make sure that Dr. Sang is actually talking about using the coefficients from the regression splines using the simulated bases as the feature matrix. (I think she is, because then `X_basis%*%beta_spline` would be the estimated values from that regression.)
-2. The `get_score()` function outputs a p length vector whose entries correspond to the features in the feature matrix. The last element in this vector (corresponding to the additional column we get by appending `X_basis%*%beta_spline` to out original feature matrix) is much larger than the others, so we should keep an eye on this.
+1. The `augmented_feature_mat()` method was returning a feature matrix with the column of 1s for the intercept. `R` will include this automatically, so I modified the `return()` statement so the output would not include this column.
+2. The `get_score()` function outputs a p length vector whose entries correspond to the features in the feature matrix. The last element in this vector (corresponding to the additional columns we get by appending `X_basis` to out original feature matrix) is much larger than the others, so we should keep an eye on this.
 3. I deleted the `get_spatial_covar_mat()` function because we no longer need it.
 4. The paper specifies that the weight matrix $W$ must be positive definite. Even though we followed the definition for $W$ given in the paper to a tee, our function doesn't return a positive definite matrix if you consider the eighth decimal place of each entry. Since the eighth decimal isn't especially significant in the grand scheme of things, I added the `round(., 7)` method to make sure that the method returns a weight matrix that satisfies the positive definiteness requirement.
-5. I have no idea how to come up with good values of $C$ in the likelihood function. I've been using $C = 1$ so far just so the code will run and play nice. I need to read through the paper some more to figure out how they did it.
-6. The `augmented_feature_mat()` method was returning a feature matrix with the column of 1s for the intercept. `R` will include this automatically, so I modified `return()` statement so the output would not include this column.
+5. I'm not sure how to come up with good values of $C$ in the likelihood function. I've been using $C = 1$ so far just so the code will run and play nice. I need to read through the paper some more to figure out how they did it.
 
 Next, let's look at the methods for the Importance Sampling algorithm for a single quantile.
 ```{r}
@@ -134,12 +117,26 @@ adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){
   beta <- coef(lm(y ~ X))[-1] ## Step 1: Initialize starting values for IS algorithm
   S <- cov(X) ## Step 1: Initialize starting values for IS algorithm
   
-  params <- list(beta, S)  ## Put our initial parameter estimates/starting values into a list called params so we can update it in the loop and use the same name convention
-  names(params) <- c("mu", "S")
+  a_1 <- coef(lm(y ~ X))[-1]
+  a_0 <- quantile(y - X%*%a_1, tau)
+  a <- c(a_0, a_1)
+  X <- cbind(rep(1, n), X)
+  temp <- X[1,]%*%t(X[1,])
+  for(i in 2:n){
+    temp <- temp + X[i,]%*%t(X[i,])
+  }
+  S_0 <- 1*tau*(1 - tau)*solve((1/n)*temp)
   
-  for(i in 1:num_reps){ ## Step 4: Repeat steps 2 and 3 until we achieve the desired effective sample size (the effective sample size has not been coded yet, but I will write that up next)
-    draws <- rmvnorm(M, params$mu, params$S)  ## Step 2: Simulate M values from the proposal distribution
-    params <- get_updated_params(y, X, tau, params$mu, params$S, locs, draws) ## Step 3: Update the parameter values using the simulated values from Step 2 and the importance weights 
+  params <- list(a, S_0)
+  names(params) <- c("mu", "S")
+  draw <- rmvnorm(M, params$mu, params$S)
+  
+  # params <- list(beta, S)  ## Put our initial parameter estimates/starting values into a list called params so we can update it in the loop and use the same name convention
+  # names(params) <- c("mu", "S")
+  
+  for(i in 2:num_reps){ ## Step 4: Repeat steps 2 and 3 until we achieve the desired effective sample size (the effective sample size has not been coded yet, but I will write that up next)
+    draw <- rmvnorm(M, params$mu, params$S)  ## Step 2: Simulate M values from the proposal distribution
+    params <- get_updated_params(y, X, tau, params$mu, params$S, locs, draw) ## Step 3: Update the parameter values using the simulated values from Step 2 and the importance weights 
   }
   return(params)
 }
@@ -147,19 +144,19 @@ adaIS_singleQuantile <- function(y, X, tau, C, locs, M, num_reps){
 
 Next, let's simulate some data so we can test what we have so far. 
 
-First, let's generate and plot the simulated data. (This simulation technique was adapted from Dr. Sang's demo code. Lecture 3, Gaussian Processes; Big Data Demo)
+First, let's generate and plot the simulated data. 
 ```{r}
-locs <- as.matrix(expand.grid((1:100)/100, (1:100)/100))
-sigma_sq <- 4
+n <- 10000
+locs <- as.matrix(cbind(runif(n, 0, 10), runif(n, 0, 10)))
+sigma_sq <- 2
 phi <- .4
 nu <- .5
 tau_sq <- .5
 
 w <- fast_Gp_sim(c(sigma_sq, phi, nu, 0), "matern_isotropic", locs, 30)
 
-n <- nrow(locs)
 X <- as.matrix(cbind(rep(1, n), rnorm(n), rnorm(n)))
-beta <- as.matrix(c(1, 1, 2))
+beta <- as.matrix(c(1, 2, 3))
 p <- length(beta)
 y <- rnorm(n, X%*%beta + w, sqrt(tau_sq))
 
@@ -197,7 +194,7 @@ score
 
 weight_mat <- weight(X_augmented, tau)
 weight_mat
-is.positive.definite(weight_mat)
+#is.positive.definite(weight_mat)
 
 lik <- get_likelihood(y_train, X_augmented, tau, beta, locs_train, 1)
 lik
