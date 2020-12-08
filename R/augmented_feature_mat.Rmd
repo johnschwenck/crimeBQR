@@ -15,44 +15,20 @@ library(ggplot2)
 library(matrixcalc)
 library(gstat)
 library(GpGp)
+library(doParallel)
 ```
 
-Dr. Sang's recommendations:
-
-> The model is Y=quantile regression (X_beta + X_basis*beta_spline)
-We can then use the current framework, but now with 
-(p+# of basis)  estimating equations, and the working weight matrix is calculated using 
-X=(covariates, spatial basis covariates). 
-
-Sample code provided by Dr. Sang:
+Modified function to return augmented feature matrix as discussed with Dr. Sang. 
 ```{r}
-library(FRK)
-n <- 500
-coords <- cbind(runif(n), runif(n))
-G <- auto_basis(manifold = plane(), data = coords, regular = 0, max_basis=20,
-           nres = 2, type = "bisquare")
-## this is the design matrix corresponding to 20 basis functions
-X_basis <- eval_basis(G, coords) 
-# matrix(X_basis). you can convert sparse basis design matrix to regular matrix if needed
-dim(X_basis)
-```
-
-*We can use this to generate the matrix of spatial basis covariates that we will append to the original feature matrix.*
-
-Next we will write a method to obtain the desired augmented feature matrix. We will scale each spatial basis covariate by its $L^2$ norm.
-```{r}
-augmented_feature_mat <- function(y, X, locs){
-  G <- auto_basis(manifold = plane(), data = locs, regular = 0, max_basis=20,
-                  nres = 2, type = "bisquare")
-  spatial_basis <- as.matrix(eval_basis(G, locs))
-  for(i in 1:ncol(spatial_basis)){
-    spatial_basis[,i] <- spatial_basis[,i]/sqrt(sum(spatial_basis[,i]^2))
-  }
-  return(as.matrix(cbind(X, spatial_basis))[,-1]) ## See item (1) below
+augmented_feature_mat <- function(X, locs, knots, phi, sigma_sq){
+  C_knots <- sigma_sq*exp(-rdist(knots, knots)/phi)
+  half_inv_C_knots <- chol(solve(C_knots))
+  basis_X <- sigma_sq*exp(-rdist(locs, knots)/phi)%*%half_inv_C_knots
+  return(cbind(X, basis_X)[,-1])
 }
 ```
 
-Now, let's move on to the more rudimentary functions of our 
+Now, let's move on to the more rudimentary functions
 ```{r}
 get_score<- function(y, X, tau, beta){  ## See item (2) below
   n <- nrow(X)
@@ -92,18 +68,21 @@ A few comments on the methods above:
 
 Next, let's look at the methods for the Importance Sampling algorithm for a single quantile.
 ```{r}
-get_updated_params <- function(y, X, tau, beta, Sigma, locs, draw){  
+get_updated_params <- function(y, X, tau, beta, Sigma, locs, draws){  
   n <- length(y)
   p <- ncol(X)
   
-  w <- get_likelihood(y, X, tau, beta, locs, 1)*(1/(2*n)^p)/dmvnorm(draw, beta, Sigma)
+  is_weights <- numeric(nrow(draws))
+  for(i in 1:nrow(draws)){
+    is_weights[i] <- get_likelihood(y, X, tau, draws[i,], locs, 1)*(1/(2*n)^p)/dmvnorm(draws[i,], beta, cov(X))
+  }
   
-  mu_hat <- apply(w*draw, 2, sum)/sum(w)
+  mu_hat <- apply(w*draws, 2, sum)/sum(w)
   
   S <- matrix(nrow = p, ncol = p)
   for(i in 1:p){
     for(j in 1:p){
-      S[i,j] <- sum(w*draw[,i]*draw[,j])/sum(w) - mu_hat[i]*mu_hat[j]
+      S[i,j] <- sum(w*draws[,i]*draws[,j])/sum(w) - mu_hat[i]*mu_hat[j]
     }
   }
   temp <- list(mu_hat, S)
@@ -149,13 +128,13 @@ First, let's generate and plot the simulated data.
 n <- 10000
 locs <- as.matrix(cbind(runif(n, 0, 10), runif(n, 0, 10)))
 sigma_sq <- 2
-phi <- .4
+phi <- 5
 nu <- .5
 tau_sq <- .5
 
 w <- fast_Gp_sim(c(sigma_sq, phi, nu, 0), "matern_isotropic", locs, 30)
 
-X <- as.matrix(cbind(rep(1, n), rnorm(n), rnorm(n)))
+X <- as.matrix(cbind(rep(1, n), locs[,1]/10, locs[,2]/10))
 beta <- as.matrix(c(1, 2, 3))
 p <- length(beta)
 y <- rnorm(n, X%*%beta + w, sqrt(tau_sq))
@@ -185,7 +164,7 @@ Next, let's test out our more basic methods.
 ```{r}
 tau <- .5
 
-X_augmented <- augmented_feature_mat(y_train, X_train, locs_train)
+X_augmented <- augmented_feature_mat(X_train, locs_train, expand.grid(seq(0.1,9.9,length=5),seq(0.1,9.9,length=5)), 5, 2)
 X_augmented[1:10,]
 
 beta <- coef(lm(y_train ~ X_augmented))[-1]
@@ -194,7 +173,6 @@ score
 
 weight_mat <- weight(X_augmented, tau)
 weight_mat
-#is.positive.definite(weight_mat)
 
 lik <- get_likelihood(y_train, X_augmented, tau, beta, locs_train, 1)
 lik
@@ -205,9 +183,9 @@ As can be seen above, the code for the more basic methods runs. However, we stil
 Now, let's move on to the Importance Sampling methods.
 ```{r}
 Sigma <- cov(X_augmented)
-draw <- rmvnorm(1, beta, Sigma)
-pars <- get_updated_params(y_train, X_augmented, tau, beta, Sigma, locs_train, draw)
-pars
+draw <- rmvnorm(1000, beta, Sigma)
+## pars <- get_updated_params(y_train, X_augmented, tau, beta, Sigma, locs_train, draw)
+## pars
 
 ## post_dist_params <- adaIS_singleQuantile(y_train, X_augmented, tau, 1, locs_train, 5000, 10)
 ## get_updated_params() isn't working, so we can't expect adaIS_singleQuantile() to work either
