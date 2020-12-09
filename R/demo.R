@@ -12,7 +12,7 @@ augmented_feature_mat <- function(X, locs, knots, phi, sigma_sq){
   return(cbind(X, basis_X)[,-1])
 }
 
-get_score<- function(y, X, tau, beta){  ## See item (2) below
+get_score<- function(y, X, tau, beta){ 
   n <- nrow(X)
   temp <- t(X[1,,drop=FALSE])*ifelse(y[1] - X[1,,drop=FALSE]%*%as.matrix(beta) < 0, tau  - 1, tau)[1,1]
   for(i in 2:n){
@@ -21,7 +21,7 @@ get_score<- function(y, X, tau, beta){  ## See item (2) below
   return(temp)
 }
 
-weight <- function(X, tau){  ## See item (4) below
+weight <- function(X, tau){  
   n <- nrow(X)
   temp <- X[1,]%*%t(X[1,])
   for(i in 2:n){
@@ -31,7 +31,7 @@ weight <- function(X, tau){  ## See item (4) below
   return(coef*solve(temp))
 }
 
-get_likelihood <- function(y, X, tau, beta, C){ ## See item (5) below
+get_likelihood <- function(y, X, tau, beta, C){ 
   score <- get_score(y, X, tau, beta)
   coef <- -1/(2*length(y))
   weight_X <- weight(X, tau) 
@@ -58,7 +58,7 @@ X_augmented <- augmented_feature_mat(X, locs, expand.grid(seq(0.1,9.9,length=5),
 
 b <- coef(lm(y ~ X_augmented))[-1]
 
-## B is an Mxp matrix consisting of M simulated p-length vecotrs of model coefficients
+## B is an Mxp matrix consisting of M simulated p-length vectors of model coefficients
 M <- 100
 B <- rmvnorm(M, b, cov(X_augmented))
 
