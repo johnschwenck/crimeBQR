@@ -142,13 +142,6 @@ We have encountered several issues throughout this process, most notably involvi
 
 Several attempts were made to address and remedy these issues, but so far none have consistently yielded valid results. The most promising of results obtained so far involved altering the expression used to compute the importance weights within the importance sampling algorithm. Instead of computing the importance weights as $w^{(r)} = \frac{L(b^{(r)}\pi^{(r)})}{q(b^{(r)})}$ where $L(Y | X, \boldsymbol{\beta}) = C \exp\left( -\frac{1}{2n} s_\tau(\boldsymbol{\beta})^T W s_\tau(\boldsymbol{\beta}) \right)$ and $q(b^{(r)}) = (2 \pi)^{-\frac{n}{2}} (det(\Sigma))^{-\frac{1}{2}} \exp \left( -\frac{1}{2} (X - \mu)^T \Sigma^{-1} (X - \mu) \right)$, the importance weights were computed as $w^{(r)} = C (2 \pi)^{\frac{n}{2}} (det(\Sigma))^{\frac{1}{2}} \exp\left( \frac{-\frac{1}{2n} s_\tau(\boldsymbol{\beta})^T W s_\tau(\boldsymbol{\beta})}{-\frac{1}{2} (X - \mu)^T \Sigma^{-1} (X - \mu)} \right)$ While this yields minimally better results, the posterior covariance matrix obtained from the importance sampling algorithm is clearly incorrect.
 
-\color{red}
-
-
-The problems of the weight matrix naturally led to difficulties with the correct likelihood. Because of the extremely large negative value in our exponent, we nearly always returned a likelihood value of zero explicitly. By nature of importance sampling, if the likelihood is zero or very close to it, as is the prior, then the resulting importance weights will be zero as well. Once we diagnose the problem within the likelihood function, the rest of the method should work as intended. 
-
-Granted, our simulation relied on a drastically different sample size than in the original Wu & Narisetty paper, but our results are still essentially zero. 
-\color{black}
 
 ## Future Directions
 
