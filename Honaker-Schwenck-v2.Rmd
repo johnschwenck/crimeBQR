@@ -31,6 +31,18 @@ Our proposed method extends their approach to a spatial setting by utilizing an 
 
 # Methodology
 
+We first define a score function and working likelihood following from the [Wu and Narisetty (2020)](https://projecteuclid.org/download/pdfview_1/euclid.ba/1596160823) paper. The score function seeks to optimize the regression estimator given by ***(1.1)*** through the following:
+$$s_\tau(\beta) = \sum_{i=1}^n\boldsymbol{x_i}\psi_\tau(y_i-\boldsymbol{x_i}^T\boldsymbol{\beta})$$
+where $\psi_\tau(u) = \tau - I(u<0)$ is the check-loss function for the $\tau$th quantile. The proposed working likelihood is then given by: 
+$$L(Y | X, \boldsymbol{\beta}) = C \exp\left( -\frac{1}{2n} s_\tau(\boldsymbol{\beta})^T W s_\tau(\boldsymbol{\beta}) \right)$$
+where $W$ is a p x p positive definite weight matrix given by:
+$$W = \frac{n}{\tau(1 - \tau)} \left( \sum_{i = 1}^n x_i x_i^T \right)^{-1}$$
+and $C$ is a constant that does not depend on $\boldsymbol{\beta}$.
+
+The above working likelihood $L(Y | X, \boldsymbol{\beta})$ with this specification of the weight matrix $W$ as the sampling model leads to a posterior distribution that is numerically asymptotically normal. Using this working likelihood as the sampling model for the model parameters of a Bayesian regression, Wu & Narisetty propose an adaptive Importance Sampling algorithm to approximate the mean vector and covariance matrix of the resulting posterior distribution. In the case of modeling multiple $m$ quantiles jointly, the score function will then incorporate these $m$ quantiles jointly and the weight matrix will be reconfigured into an $mp \times mp$ block matrix $W = (Q\otimes G)^-1$ where $Q = (\min(\tau_i,\tau_j) - \tau_i\tau_j)_{ij}$ and $G = \frac{1}{n}\sum_{i=1}^nx_ix_i^T$
+
+When working with spatial data, it is imperative that the model consider and account for the spatial variability and dependencies within the data. Failure to do so can lead to inaccurate predictions, loss of power, and invalid inferential procedures. To introduce these spatial dependencies to the score-based working likelihood approach outlined above, we will generate an augmented feature matrix by appending a matrix of spatial basis covariate functions to the standard n x p feature matrix $X$. Then, implementing the framework outlined by Wu & Narisetty will yield a Bayesian quantile regression model that takes into account the locations at which various observations were made as part of its input. 
+
 \color{red}
 outline reminders for tomorrow:
 (1) wu likelihood --> our likelihood with spatial
@@ -39,16 +51,6 @@ outline reminders for tomorrow:
 (4) ada-is mult quantiles
 (5) 
 \color{black}
-
-[Wu and Narisetty (2020)](https://projecteuclid.org/download/pdfview_1/euclid.ba/1596160823) propose a working likelihood function of the form:
-$$L(Y | X, \boldsymbol{\beta}) = C \exp\left( -\frac{1}{2n} s_\tau(\boldsymbol{\beta})^T W s_\tau(\boldsymbol{\beta}) \right)$$
-where $s_\tau(\vec{\beta}) = \sum_{i = 1}^n x_i \psi_\tau(y_i - x_i^T \vec{\beta})$ is the score function (in which $\psi_\tau(u) = \tau - I_{\{ u < 0 \}}(u)$ is the check loss function for the $\tau$th quantile), $W$ is a p x p positive definite weight matrix given by:
-$$W = \frac{n}{\tau(1 - \tau)} \left( \sum_{i = 1}^n x_i x_i^T \right)^{-1}$$
-and $C$ is a constant that does not depend on $\boldsymbol{\beta}$. It can be shown that using the above working likelihood $L(Y | X, \boldsymbol{\beta})$ with weight matrix $W$ as our sampling model leads to a posterior distribution that is, asymptotically, very nearly normal. Using this working likelihood as the sampling model for the model parameters of a Bayesian regression, Wu & Narisetty propose an adaptive Importance Sampling algorithm to approximate the mean vector and covariance matrix of the resulting posterior distribution. 
-
-When working with spatial data, it is imperative that the model consider and account for the spatial variability and dependencies within the data. Failure to do so can lead to inaccurate predictions, loss of power, and invalid inferential procedures. To introduce these spatial dependencies to the score-based working likelihood approach outlined above, we will generate an augmented feature matrix by appending a matrix of spatial basis covariate functions to the standard n x p feature matrix $X$. Then, implementing the framework outlined by Wu & Narisetty will yield a Bayesian quantile regression model that takes into account the locations at which various observations were made as part of its input. 
-
-
 *This section needs to be revised to incorporate/describe the changes made to our approach. Describe augmented feature matrix and discuss how it draws from Dr. Sang's paper. Give overview of Wu & Narisetty and how our feature matrix will give us a novel Bayesian spatial quantile regression.*
 
 To account for the spatial dependence of observed data, we introduce an augmented feature matrix $\tilde{X}$. $\tilde{X}$ is obtained by appending an n x b matrix of spatial basis covariate functions to the standard n x p feature matrix. 
