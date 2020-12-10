@@ -15,7 +15,6 @@ library(ggplot2)
 library(matrixcalc)
 library(gstat)
 library(GpGp)
-library(doParallel)
 ```
 
 Modified function to return augmented feature matrix as discussed with Dr. Sang. 
@@ -75,14 +74,16 @@ get_updated_params <- function(y, X, tau, beta, Sigma, locs, draws){
   is_weights <- numeric(nrow(draws))
   for(i in 1:nrow(draws)){
     is_weights[i] <- get_likelihood(y, X, tau, draws[i,], locs, 1)*(1/(2*n)^p)/dmvnorm(draws[i,], beta, cov(X))
+    print(i)
+    print(is_weights[i])
   }
   
-  mu_hat <- apply(w*draws, 2, sum)/sum(w)
+  mu_hat <- apply(is_weights*draws, 2, sum)/sum(is_weights)
   
   S <- matrix(nrow = p, ncol = p)
   for(i in 1:p){
     for(j in 1:p){
-      S[i,j] <- sum(w*draws[,i]*draws[,j])/sum(w) - mu_hat[i]*mu_hat[j]
+      S[i,j] <- sum(is_weights*draws[,i]*draws[,j])/sum(is_weights) - mu_hat[i]*mu_hat[j]
     }
   }
   temp <- list(mu_hat, S)
@@ -164,18 +165,18 @@ Next, let's test out our more basic methods.
 ```{r}
 tau <- .5
 
-X_augmented <- augmented_feature_mat(X_train, locs_train, expand.grid(seq(0.1,9.9,length=5),seq(0.1,9.9,length=5)), 5, 2)
-X_augmented[1:10,]
+X_augmented <- augmented_feature_mat(X_train, locs_train, expand.grid(seq(0.1,9.9,length=5), seq(0.1,9.9,length=5)), 5, 2)
+## X_augmented[1:10,]
 
 beta <- coef(lm(y_train ~ X_augmented))[-1]
 score <- get_score(y_train, X_augmented, tau, beta)
-score
+## score
 
 weight_mat <- weight(X_augmented, tau)
 weight_mat
 
 lik <- get_likelihood(y_train, X_augmented, tau, beta, locs_train, 1)
-lik
+## lik
 ```
 
 As can be seen above, the code for the more basic methods runs. However, we still run into the same issues we discussed earlier. 
@@ -184,8 +185,8 @@ Now, let's move on to the Importance Sampling methods.
 ```{r}
 Sigma <- cov(X_augmented)
 draw <- rmvnorm(1000, beta, Sigma)
-## pars <- get_updated_params(y_train, X_augmented, tau, beta, Sigma, locs_train, draw)
-## pars
+pars <- get_updated_params(y_train, X_augmented, tau, beta, Sigma, locs_train, draw)
+pars
 
 ## post_dist_params <- adaIS_singleQuantile(y_train, X_augmented, tau, 1, locs_train, 5000, 10)
 ## get_updated_params() isn't working, so we can't expect adaIS_singleQuantile() to work either
@@ -193,9 +194,35 @@ draw <- rmvnorm(1000, beta, Sigma)
 
 Because this is a Bayesian regression model, we will need to derive the posterior predictive distribution to make predictions at the test locations using the test data. Once the Importance Sampling methods work and give us proper values for the parameters of the posterior distribution, we can make the desired predictions to evaluate the predictive performance of our model. 
 
+I think another issue has to deal with the number of simulated observations. Part of the reason the exponent is so large is because the values in the weight matrix are quite large. The values in the feature matrix are fairly small, so when we invert them to get the weight matrix, we get very large values. However, these values level off as the nuymber of observations increase because the summation involved in the weight matrix becomes larger because there ar emore observations. We should also note that the orighinal paper only uses n=100,200 while we use 7,500.
 
-
-
+```{r}
+get_updated_params_2 <- function(y, X, tau, beta, Sigma, draws){  
+  n <- length(y)
+  p <- ncol(X)
+  
+  is_weights <- numeric(nrow(draws))
+  W <- weight(X, tau)
+  for(i in 1:nrow(draws)){
+    s <- get_score(y, X, tau, draws[i,])
+    numer <- (-1/(2*nrow(X_augmented)))*t(s)%*%W%*%s
+    denom <- -.5*t(draws[i,] - colMeans(draws))%*%solve(round(Sigma, 7))%*%(draws[i,] - colMeans(draws))
+    is_weights[i] <- exp(numer/denom)*(1/(2*n)^p)
+  }
+  mu_hat <- apply(is_weights*draws, 2, sum)/sum(is_weights)
+  
+  S <- matrix(nrow = p, ncol = p)
+  for(i in 1:p){
+    for(j in 1:p){
+      S[i,j] <- sum(is_weights*draws[,i]*draws[,j])/sum(is_weights) - mu_hat[i]*mu_hat[j]
+    }
+  }
+  temp <- list(mu_hat, S)
+  names(temp) <- c("mu", "S")
+  return(temp)
+}
+g <- get_updated_params_2(y_train, X_augmented, tau, beta, Sigma, B)
+```
 
 
 
